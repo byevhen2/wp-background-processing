@@ -117,31 +117,47 @@ class BackgroundProcess
     /**
      * Run the background process.
      *
-     * @return \WP_Error|array The response data or WP_Error on failure.
+     * @return \WP_Error|true TRUE or WP_Error on failure.
      */
     public function run()
     {
-        // Run healthchecking cron
-        $this->cron->schedule();
+        // No need to run cron and AJAX at the same time and make two equal
+        // calls of maybeHandle()
+        if (!$this->cron->isScheduled()) {
+            // Run healthchecking cron (will run immediately when scheduled
+            // first time)
+            $this->cron->schedule();
 
-        // Dispatch event
-        $requestUrl = $this->requestUrl();
-        $requestUrl = add_query_arg($this->requestQueryArgs(), $requestUrl);
+            return true;
 
-        $requestArgs = $this->requestPostArgs();
+        } else {
+            // Dispatch AJAX event
+            $requestUrl = $this->requestUrl();
+            $requestUrl = add_query_arg($this->requestQueryArgs(), $requestUrl);
 
-        // Use AJAX handle (see startListenEvents())
-        return wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
+            $requestArgs = $this->requestPostArgs();
+
+            // Use AJAX handle (see startListenEvents())
+            $response = wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
+
+            return is_wp_error($response) ? $response : true;
+        }
     }
 
     /**
      * Re-run the process if it's down.
+     *
+     * @param bool $forse Optional. Touch process even on AJAX or cron call.
+     *     FALSE by default.
      */
-    public function touch()
+    public function touch($force = false)
     {
+        if (!$force && (wp_doing_ajax() || wp_doing_cron())) {
+            return;
+        }
+
         if (!$this->isRunning() && !$this->isEmptyQueue()) {
-            // The process is down. Don't wait for the cron, restart the process
-            // now
+            // The process is down. Don't wait for the cron and restart the process
             $this->run();
         }
     }
@@ -151,8 +167,8 @@ class BackgroundProcess
         if ($this->isRunning()) {
             update_option($this->name . '_abort', true, 'no');
         } else {
-            $this->cron->unschedule();
             TasksBatches::removeAll($this->name);
+            $this->clearOptions();
         }
     }
 
@@ -198,41 +214,39 @@ class BackgroundProcess
         // Don't lock up other requests while processing
         session_write_close();
 
-        if ($this->isRunning()) {
-            // Background process already running
-            $this->fireDie();
+        // Check nonce of AJAX call
+        if (wp_doing_ajax()) {
+            check_ajax_referer($this->name, 'wpnonce');
+        }
 
-        } else if ($this->isEmptyQueue()) {
-            // No data to process
-            $this->fireDie();
-
-        } else {
+        if (!$this->isEmptyQueue() && !$this->isRunning()) {
             // Have something to process...
-
-            // Check nonce for AJAX calls
-            if (wp_doing_ajax()) {
-                check_ajax_referer($this->name, 'wpnonce');
-            }
 
             // Lock immediately and don't wait until another instance will
             // spawn. At the moment we can only use the default value for lock
             // time. But later in handle() we will set the proper lock time
-            $this->lock();
+            $locked = $this->lock();
 
-            // Setup limits of execution time, lock time and memory
-            $this->executionLimits = $this->instantiateExecutionLimits();
-            $this->executionLimits->setupLimits();
+            if ($locked) {
+                // Setup limits of execution time, lock time and memory
+                $this->executionLimits = $this->instantiateExecutionLimits();
+                $this->executionLimits->setupLimits();
 
-            // Save new lock time for future locks
-            $this->lockTime = $this->executionLimits->lockTime;
+                // Save new lock time for future locks
+                $this->lockTime = $this->executionLimits->lockTime;
 
-            // Start doing tasks
-            $this->handle();
+                // Start doing tasks
+                $this->handle();
+            }
         }
+
+        $this->fireDie();
     }
 
     /**
      * Lock the process so that multiple instances can't run simultaneously.
+     *
+     * @return bool TRUE if the transient was set, FALSE - otherwise.
      */
     protected function lock()
     {
@@ -240,7 +254,7 @@ class BackgroundProcess
             $this->startTime = time();
         }
 
-        set_transient($this->name . '_lock', microtime(), $this->lockTime);
+        return set_transient($this->name . '_lock', microtime(), $this->lockTime);
     }
 
     /**
@@ -248,6 +262,7 @@ class BackgroundProcess
      */
     protected function unlock()
     {
+        $this->startTime = 0;
         delete_transient($this->name . '_lock');
     }
 
@@ -262,8 +277,8 @@ class BackgroundProcess
         do {
             $batches = TasksBatches::createFromOptions($this->name);
 
-            foreach ($batches as $batchName => $batch) {
-                foreach ($batch as $index => $workload) {
+            foreach ($batches as $batchName => $tasks) {
+                foreach ($tasks as $index => $workload) {
                     // Continue locking the process
                     $this->lock();
 
@@ -271,11 +286,11 @@ class BackgroundProcess
 
                     // Remove task from the batch whether it ended up
                     // successfully or not
-                    $batch->removeTask($index);
+                    $tasks->removeTask($index);
 
                     // Add new task if the previous one returned new workload
-                    if ($response !== false) {
-                        $batch->addTask($response);
+                    if (!is_bool($response)) {
+                        $tasks->addTask($response);
                         $this->increaseTasksTotalCount(1);
                     }
 
@@ -283,10 +298,10 @@ class BackgroundProcess
 
                     // No time or memory left? We need to restart the process
                     if ($this->shouldStop()) {
-                        if ($batch->isFinished()) {
+                        if ($tasks->isFinished()) {
                             $batches->removeBatch($batchName);
-                        } else {
-                            $batch->save();
+                        } else if (!$this->isAborting) {
+                            $tasks->save();
                         }
 
                         // Stop doing tasks
@@ -298,7 +313,7 @@ class BackgroundProcess
             } // For each batch
         } while (!$this->shouldStop() && !$this->isEmptyQueue());
 
-        if ($this->isAborting()) {
+        if ($this->isAborting) {
             TasksBatches::removeAll($this->name);
         }
 
@@ -312,8 +327,6 @@ class BackgroundProcess
         } else {
             $this->afterComplete();
         }
-
-        $this->fireDie();
     }
 
     protected function beforeStart() {}
@@ -345,7 +358,7 @@ class BackgroundProcess
 
     protected function afterComplete()
     {
-        if ($this->isAborting()) {
+        if ($this->isAborting) {
             $this->afterCancel();
         } else {
             $this->afterSuccess();
@@ -353,6 +366,7 @@ class BackgroundProcess
 
         do_action($this->name . '_completed');
 
+        $this->cron->unschedule();
         $this->clearOptions();
     }
 
@@ -414,11 +428,7 @@ class BackgroundProcess
      */
     public function isRunning()
     {
-        if (get_transient($this->name . '_lock')) {
-            return true;
-        } else {
-            return false;
-        }
+        return get_transient($this->name . '_lock') !== false;
     }
 
     /**

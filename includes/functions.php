@@ -1,5 +1,19 @@
 <?php
 
+if (!function_exists('esc_sql_underscores')) {
+    /**
+     * "_" means "any character" in SQL "... LIKE batch_%". Transform the
+     * wildcard into a common character.
+     *
+     * @param string $pattern
+     * @return string
+     */
+    function esc_sql_underscores($pattern)
+    {
+        return str_replace('_', '\_', $pattern);
+    }
+}
+
 if (!function_exists('get_uncached_option')) {
     /**
      * @param string $option Option name.

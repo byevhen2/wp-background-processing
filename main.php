@@ -1,6 +1,6 @@
 <?php
 
-if (!class_exists('\NSCL\WordPress\Async\BackgroundProcess')) {
+if (!class_exists('\NSCL\WordPress\Async\BackgroundProcess', false)) {
     require 'includes/functions.php';
     require 'includes/polyfills.php';
 

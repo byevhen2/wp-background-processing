@@ -41,7 +41,7 @@ class Cron
 
     public function schedule()
     {
-        if (!wp_next_scheduled($this->action)) {
+        if (!$this->isScheduled()) {
             wp_schedule_event(time(), $this->interval, $this->action);
         }
     }
@@ -50,8 +50,14 @@ class Cron
     {
         $timestamp = wp_next_scheduled($this->action);
 
-        if ($timestamp) {
+        if ($timestamp !== false) {
             wp_unschedule_event($timestamp, $this->action);
         }
+    }
+
+    public function isScheduled()
+    {
+        $timestamp = wp_next_scheduled($this->action);
+        return $timestamp !== false;
     }
 }

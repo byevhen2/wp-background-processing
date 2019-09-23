@@ -2,7 +2,7 @@
 
 namespace NSCL\WordPress\Async;
 
-class TasksBatches
+class TasksBatches implements \Iterator
 {
     protected $process = 'wpbg_process'; // Name of the backgorund process
 
@@ -133,10 +133,10 @@ class TasksBatches
     {
         global $wpdb;
 
-        $batchNames = $wpdb->get_column(
+        $batchNames = $wpdb->get_col(
             $wpdb->prepare(
                 "SELECT `option_name` FROM {$wpdb->options} WHERE `option_name` LIKE %s ORDER BY `option_id` ASC",
-                $processName . '_batch_%'
+                esc_sql_underscores($processName . '_batch_%')
             )
         );
 
@@ -158,7 +158,7 @@ class TasksBatches
         $wpdb->query(
             $wpdb->prepare(
                 "DELETE FROM {$wpdb->options} WHERE `option_name` LIKE %s",
-                $processName . '_batch_%'
+                esc_sql_underscores($processName . '_batch_%')
             )
         );
     }

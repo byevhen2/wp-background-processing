@@ -38,7 +38,7 @@ trait BatchesMethods
         $count = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*) FROM {$wpdb->options} WHERE `option_name` LIKE %s",
-                $this->name . '_batch_%'
+                esc_sql_underscores($this->name . '_batch_%')
             )
         );
 
