@@ -289,7 +289,7 @@ class BackgroundProcess
                     $tasks->removeTask($index);
 
                     // Add new task if the previous one returned new workload
-                    if (!is_bool($response)) {
+                    if (!is_bool($response) && !empty($response)) { // Skip NULLs
                         $tasks->addTask($response);
                         $this->increaseTasksTotalCount(1);
                     }
