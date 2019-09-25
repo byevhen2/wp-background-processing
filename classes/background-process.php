@@ -310,6 +310,10 @@ class BackgroundProcess
                 } // For each task
 
                 $batches->removeBatch($batchName);
+
+                if (!$batches->isFinished()) {
+                    $this->betweenBatches();
+                }
             } // For each batch
         } while (!$this->shouldStop() && !$this->isEmptyQueue());
 
@@ -355,6 +359,8 @@ class BackgroundProcess
     {
         $this->increaseTasksCompletedCount(1);
     }
+
+    protected function betweenBatches() {}
 
     protected function afterComplete()
     {

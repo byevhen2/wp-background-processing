@@ -54,6 +54,14 @@ class TasksBatches implements \Iterator
         return count($this->batches);
     }
 
+    /**
+     * @return bool
+     */
+    public function isFinished()
+    {
+        return $this->count() == 0;
+    }
+
     public function rewind()
     {
         // Reset the indexes and get rid of "gaps" (indexes of removed items)
