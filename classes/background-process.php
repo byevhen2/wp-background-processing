@@ -312,7 +312,7 @@ class BackgroundProcess
                 $batches->removeBatch($batchName);
 
                 if (!$batches->isFinished()) {
-                    $this->betweenBatches();
+                    $this->betweenBatches($batches);
                 }
             } // For each batch
         } while (!$this->shouldStop() && !$this->isEmptyQueue());
@@ -360,7 +360,10 @@ class BackgroundProcess
         $this->increaseTasksCompletedCount(1);
     }
 
-    protected function betweenBatches() {}
+    /**
+     * @param \NSCL\WordPress\Async\TasksBatches $batches
+     */
+    protected function betweenBatches($batches) {}
 
     protected function afterComplete()
     {
