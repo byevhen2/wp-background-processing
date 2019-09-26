@@ -167,6 +167,7 @@ class BackgroundProcess
         if ($this->isRunning()) {
             update_option($this->name . '_abort', true, 'no');
         } else {
+            $this->cron->unschedule();
             TasksBatches::removeAll($this->name);
             $this->clearOptions();
         }
