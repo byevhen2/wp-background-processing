@@ -2,6 +2,17 @@
 
 namespace NSCL\WordPress\Async;
 
+require 'includes/functions.php';
+require 'includes/polyfills.php';
+
+require 'classes/tasks-batch.php';
+require 'classes/tasks-batches.php';
+require 'classes/cron.php';
+require 'classes/execution-limits.php';
+
+require 'traits/batches-methods.php';
+require 'traits/tasks-methods.php';
+
 /**
  * @see \NSCL\WordPress\Async\BatchesMethods
  * @see \NSCL\WordPress\Async\TasksMethods
