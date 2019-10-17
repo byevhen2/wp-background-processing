@@ -180,6 +180,19 @@ class BackgroundProcess
         }
     }
 
+    /**
+     * Wait for action "init" and re-run the process if it's down.
+     *
+     * @param bool $force Optional. Touch process even on AJAX or cron call.
+     *     FALSE by default.
+     */
+    public function touchOnInit($force = false)
+    {
+        add_action('init', function () use ($force) {
+            $this->touch($force);
+        });
+    }
+
     public function cancel()
     {
         if ($this->isRunning()) {
