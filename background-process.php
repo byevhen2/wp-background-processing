@@ -134,14 +134,16 @@ class BackgroundProcess
     {
         // No need to run cron and AJAX at the same time and make two equal
         // calls of maybeHandle()
-        if (!$this->cron->isScheduled()) {
-            // Run healthchecking cron (will run immediately when scheduled
-            // first time)
-            $this->cron->schedule();
+        $callAjax = true;
 
-            return true;
+        // Try to run healthchecking cron (will run immediately when scheduled
+        // first time)
+        if (!$this->cron->isScheduled()) { // Else don't wait for the cron
+            // If fail to schedule, then use AJAX method
+            $callAjax = !$this->cron->schedule();
+        }
 
-        } else {
+        if ($callAjax) {
             // Dispatch AJAX event
             $requestUrl = $this->requestUrl();
             $requestUrl = add_query_arg($this->requestQueryArgs(), $requestUrl);
@@ -152,11 +154,16 @@ class BackgroundProcess
             $response = wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
 
             return is_wp_error($response) ? $response : true;
+        } else {
+            return true; // Cron runned
         }
     }
 
     /**
      * Re-run the process if it's down.
+     *
+     * If you’re running into the "Call to undefined function wp_create_nonce()"
+     * error, then you've hooked too early. The hook you should use is "init".
      *
      * @param bool $force Optional. Touch process even on AJAX or cron call.
      *     FALSE by default.

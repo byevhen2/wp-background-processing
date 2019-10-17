@@ -39,22 +39,35 @@ class Cron
         return $intervals;
     }
 
+    /**
+     * @return bool
+     */
     public function schedule()
     {
         if (!$this->isScheduled()) {
-            wp_schedule_event(time(), $this->interval, $this->action);
+            return wp_schedule_event(time(), $this->interval, $this->action);
+        } else {
+            return true;
         }
     }
 
+    /**
+     * @return bool
+     */
     public function unschedule()
     {
         $timestamp = wp_next_scheduled($this->action);
 
         if ($timestamp !== false) {
-            wp_unschedule_event($timestamp, $this->action);
+            return wp_unschedule_event($timestamp, $this->action);
+        } else {
+            return true;
         }
     }
 
+    /**
+     * @return bool
+     */
     public function isScheduled()
     {
         $timestamp = wp_next_scheduled($this->action);
