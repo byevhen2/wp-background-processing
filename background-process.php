@@ -158,7 +158,7 @@ class BackgroundProcess
     /**
      * Re-run the process if it's down.
      *
-     * @param bool $forse Optional. Touch process even on AJAX or cron call.
+     * @param bool $force Optional. Touch process even on AJAX or cron call.
      *     FALSE by default.
      */
     public function touch($force = false)
