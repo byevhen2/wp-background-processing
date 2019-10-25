@@ -5,66 +5,45 @@ namespace NSCL\WordPress\Async;
 require 'includes/functions.php';
 require 'includes/polyfills.php';
 
-require 'classes/tasks-batch.php';
-require 'classes/tasks-batches.php';
-require 'classes/cron.php';
-require 'classes/execution-limits.php';
+require 'classes/tasks-list.php';
+require 'classes/batches-list.php';
 
-require 'traits/batches-methods.php';
-require 'traits/tasks-methods.php';
-
-/**
- * @see \NSCL\WordPress\Async\BatchesMethods
- * @see \NSCL\WordPress\Async\TasksMethods
- */
 class BackgroundProcess
 {
-    use BatchesMethods, TasksMethods;
+    /** @var string Process name: "{prefix}_{action}". */
+    protected $name = 'wpbg_process';
 
-    /** @var string Action prefix. */
-    public $prefix = 'wpbg';
+    /** @var string The name of healthchecking cron: "{prefix}_{action}_cron" */
+    protected $cronName = 'wpbg_process_cron';
 
-    /**
-     * @var string Action name. The length should be 35 symbols (or less if the
-     * prefix is bigger). The length of option name is limited in 64 characters.
-     *
-     * Option name will consist of:
-     *     (5) prefix "wpbg" with separator "_"
-     *     (35 <=) action name of background process
-     *     (5) lock option suffix "_lock"
-     *     (19) WP's transient prefix "_transient_timeout_"
-     */
-    public $action = 'process';
+    /** @var string "{prefix}_{action}_cron_interval" */
+    protected $cronIntervalName = 'wpbg_process_cron_interval';
 
-    /** @var string Process name. Prefix + "_" + action name. */
-    protected $name;
-
-    /** @var int How many tasks will have each of the batches. */
-    public $batchSize = 100;
-
-    /** @var int Cron interval in <b>minutes</b>. */
-    protected $cronInterval = 5;
+    // Properties
+    public $prefix       = 'wpbg';    // Process prefix / vendor prefix
+    public $action       = 'process'; // Process action name
+    public $batchSize    = 100; // Tasks limit in each batch
+    public $cronInterval = 5;   // Helthchecking cron interval time in MINUTES
+    public $lockTime     = 30;  // Lock time in SECONDS
+    public $maxExecutionTime = \HOUR_IN_SECONDS; // Maximum allowed execution time in SECONDS
+    public $timeReserve  = 10;  // Stop X SECONDS before the execution time limit
+    public $memoryLimit  = 2000000000; // Max memory limit in BYTES
+    public $memoryFactor = 0.9; // {memoryFactor}% of available memory. Range: [0; 1]
 
     /** @var int Start time of current process. */
     protected $startTime = 0;
 
     /**
-     * @var int Lock time in <b>seconds</b>.
-     *
-     * <i>Don't lock for too long. The process allowed to work for a long amount
-     * of time. But we should use the short time for locks. If the process fail
-     * with an error on some task then the progress will freeze for too long.</i>
+     * @var int How many time do we have (in <b>seconds</b>) before the process
+     * will be terminated.
      */
-    protected $lockTime = 30;
+    protected $availableTime = 0;
+
+    /** @var int The maximum amount of available memory (in <b>bytes</b>). */
+    protected $availableMemory = 0;
 
     /** @var bool */
     protected $isAborting = false;
-
-    /** @var \NSCL\WordPress\Async\Cron */
-    protected $cron = null;
-
-    /** @var \NSCL\WordPress\Async\ExecutionLimits */
-    protected $executionLimits = null;
 
     /**
      * @param array $properties Optional.
@@ -75,39 +54,47 @@ class BackgroundProcess
             $this->setProperties($properties);
         }
 
-        $this->name = $this->prefix . '_' . $this->action; // "wpdb_process"
+        $this->name = $this->prefix . '_' . $this->action;       // "wpdb_process"
+        $this->cronName = $this->name . '_cron';                 // "wpbg_process_cron"
+        $this->cronIntervalName = $this->cronName . '_interval'; // "wpbg_process_cron_interval"
 
-        $this->startListenEvents();
+        $this->addActions();
     }
 
     /**
-     * @param array $props
+     * @param array $properties
      */
-    public function setProperties($props)
+    public function setProperties($properties)
     {
-        $defaults = [
-            'prefix'       => $this->prefix,
-            'action'       => $this->action,
-            'batchSize'    => $this->batchSize,
-            'cronInterval' => $this->cronInterval
-        ];
+        // Get rid of non-property fields
+        $availableToSet = array_flip($this->getPropertyNames());
 
-        // Get rid of wrong properties
-        $props = array_intersect_key($props, $defaults);
+        $properties = array_intersect_key($properties, $availableToSet);
 
-        foreach ($props as $prop => $value) {
-            $this->$prop = $value;
+        // Set up properties
+        foreach ($properties as $property => $value) {
+            $this->$property = $value;
         }
     }
 
-    protected function startListenEvents()
+    /**
+     * @return array
+     */
+    protected function getPropertyNames()
+    {
+        return ['prefix', 'action', 'batchSize', 'cronInterval', 'lockTime',
+            'maxExecutionTime', 'timeReserve', 'memoryLimit', 'memoryFactor'];
+    }
+
+    protected function addActions()
     {
         // Listen for AJAX calls
         add_action('wp_ajax_' . $this->name, [$this, 'maybeHandle']);
         add_action('wp_ajax_nopriv_' . $this->name, [$this, 'maybeHandle']);
 
-        // Listen for cron calls
-        $this->cron = $this->instantiateCron();
+        // Listen for cron events
+        add_action($this->cronName, [$this, 'maybeHandle']);
+        add_filter('cron_schedules', [$this, 'registerCronInterval']);
     }
 
     /**
@@ -116,11 +103,11 @@ class BackgroundProcess
      */
     public function addTasks($tasks)
     {
-        $batches = TasksBatches::createOnTasks($tasks, $this->batchSize, $this->name);
+        $batches = BatchesList::createWithTasks($tasks, $this->batchSize, $this->name);
         $batches->save();
 
-        $this->increaseBatchesTotalCount($batches->count());
-        $this->increaseTasksTotalCount(count($tasks));
+        $this->increaseBatchesCount($batches->count());
+        $this->increaseTasksCount(count($tasks));
 
         return $this;
     }
@@ -138,9 +125,9 @@ class BackgroundProcess
 
         // Try to run healthchecking cron (will run immediately when scheduled
         // first time)
-        if (!$this->cron->isScheduled()) { // Else don't wait for the cron
+        if (!$this->isCronScheduled()) { // Else don't wait for the cron
             // If fail to schedule, then use AJAX method
-            $callAjax = !$this->cron->schedule();
+            $callAjax = !$this->scheduleCron();
         }
 
         if ($callAjax) {
@@ -149,8 +136,6 @@ class BackgroundProcess
             $requestUrl = add_query_arg($this->requestQueryArgs(), $requestUrl);
 
             $requestArgs = $this->requestPostArgs();
-
-            // Use AJAX handle (see startListenEvents())
             $response = wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
 
             return is_wp_error($response) ? $response : true;
@@ -165,7 +150,7 @@ class BackgroundProcess
      * If you’re running into the "Call to undefined function wp_create_nonce()"
      * error, then you've hooked too early. The hook you should use is "init".
      *
-     * @param bool $force Optional. Touch process even on AJAX or cron call.
+     * @param bool $force Optional. Touch process even on AJAX or cron requests.
      *     FALSE by default.
      */
     public function touch($force = false)
@@ -183,10 +168,10 @@ class BackgroundProcess
     /**
      * Wait for action "init" and re-run the process if it's down.
      *
-     * @param bool $force Optional. Touch process even on AJAX or cron call.
+     * @param bool $force Optional. Touch process even on AJAX or cron requests.
      *     FALSE by default.
      */
-    public function touchOnInit($force = false)
+    public function touchWhenReady($force = false)
     {
         add_action('init', function () use ($force) {
             $this->touch($force);
@@ -196,10 +181,10 @@ class BackgroundProcess
     public function cancel()
     {
         if ($this->isRunning()) {
-            update_option($this->name . '_abort', true, 'no');
+            $this->updateOption('abort', true);
         } else {
-            $this->cron->unschedule();
-            TasksBatches::removeAll($this->name);
+            $this->unscheduleCron();
+            BatchesList::removeAll($this->name);
             $this->clearOptions();
         }
     }
@@ -207,7 +192,7 @@ class BackgroundProcess
     /**
      * @return string
      */
-    public function requestUrl()
+    protected function requestUrl()
     {
         return admin_url('admin-ajax.php');
     }
@@ -215,18 +200,18 @@ class BackgroundProcess
     /**
      * @return array
      */
-    public function requestQueryArgs()
+    protected function requestQueryArgs()
     {
         return [
-            'action'  => $this->name,
-            'wpnonce' => wp_create_nonce($this->name)
+            'action'     => $this->name,
+            'wpbg_nonce' => wp_create_nonce($this->name)
         ];
     }
 
     /**
      * @return array The arguments for wp_remote_post().
      */
-    public function requestPostArgs()
+    protected function requestPostArgs()
     {
         return [
             'timeout'   => 0.01,
@@ -248,24 +233,19 @@ class BackgroundProcess
 
         // Check nonce of AJAX call
         if (wp_doing_ajax()) {
-            check_ajax_referer($this->name, 'wpnonce');
+            check_ajax_referer($this->name, 'wpbg_nonce');
         }
 
         if (!$this->isEmptyQueue() && !$this->isRunning()) {
             // Have something to process...
 
-            // Lock immediately and don't wait until another instance will
-            // spawn. At the moment we can only use the default value for lock
-            // time. But later in handle() we will set the proper lock time
+            // Lock immediately or another instance may spawn before we go to
+            // handle()
             $locked = $this->lock();
 
             if ($locked) {
-                // Setup limits of execution time, lock time and memory
-                $this->executionLimits = $this->instantiateExecutionLimits();
-                $this->executionLimits->setupLimits();
-
-                // Save new lock time for future locks
-                $this->lockTime = $this->executionLimits->lockTime;
+                // Setup limits for execution time and memory
+                $this->setupLimits();
 
                 // Start doing tasks
                 $this->handle();
@@ -299,6 +279,61 @@ class BackgroundProcess
     }
 
     /**
+     * <i>Hint: it's better to lock the background process before doing this -
+     * the method "needs some time". Otherwise another process may spawn and
+     * they both will start to run simultaneously and do the same tasks twice.</i>
+     */
+    protected function setupLimits()
+    {
+        $this->limitExecutionTime();
+        $this->limitMemory();
+    }
+
+    protected function limitExecutionTime()
+    {
+        $availableTime = ini_get('max_execution_time');
+
+        // Validate the value
+        if ($availableTime === false || $availableTime === '') {
+            // A timeout limit of 30 seconds is common on shared hostings
+            $availableTime = 30;
+        } else {
+            $availableTime = intval($availableTime);
+        }
+
+        if ($availableTime <= 0) {
+            // Unlimited
+            $availableTime = $this->maxExecutionTime;
+        } else if ($this->maxExecutionTime < $availableTime) {
+            $availableTime = $this->maxExecutionTime;
+        } else {
+            // Try to increase execution time limit
+            $disabledFunctions = explode(',', ini_get('disable_functions'));
+
+            if (!in_array('set_time_limit', $disabledFunctions) && set_time_limit($this->maxExecutionTime)) {
+                $availableTime = $this->maxExecutionTime;
+            }
+        }
+
+        $this->availableTime = $availableTime;
+    }
+
+    protected function limitMemory()
+    {
+        $availableMemory = ini_get('memory_limit');
+
+        // The memory is not limited?
+        if (!$availableMemory || $availableMemory == -1) {
+            $availableMemory = $this->memoryLimit;
+        } else {
+            // Convert from format "***M" into bytes
+            $availableMemory = intval($availableMemory) * 1024 * 1024;
+        }
+
+        $this->availableMemory = $availableMemory;
+    }
+
+    /**
      * Pass each queue item to the task handler, while remaining within server
      * memory and time limit constraints.
      */
@@ -307,7 +342,7 @@ class BackgroundProcess
         $this->beforeStart();
 
         do {
-            $batches = TasksBatches::createFromOptions($this->name);
+            $batches = BatchesList::createFromOptions($this->name);
 
             foreach ($batches as $batchName => $tasks) {
                 foreach ($tasks as $index => $workload) {
@@ -323,7 +358,7 @@ class BackgroundProcess
                     // Add new task if the previous one returned new workload
                     if (!is_bool($response) && !empty($response)) { // Skip NULLs
                         $tasks->addTask($response);
-                        $this->increaseTasksTotalCount(1);
+                        $this->increaseTasksCount(1);
                     }
 
                     $this->taskComplete($workload, $response);
@@ -343,18 +378,17 @@ class BackgroundProcess
 
                 $batches->removeBatch($batchName);
 
-                if (!$batches->isFinished()) {
-                    $this->batchComplete($batchName, $batches);
-                }
+                $this->batchComplete($batchName, $batches);
             } // For each batch
         } while (!$this->shouldStop() && !$this->isEmptyQueue());
 
         if ($this->isAborting) {
-            TasksBatches::removeAll($this->name);
+            BatchesList::removeAll($this->name);
         }
 
-        // Unlock the process to restart it
         $this->beforeStop();
+
+        // Unlock the process to restart it
         $this->unlock();
 
         // Start next batch if not completed yet or complete the process
@@ -371,7 +405,7 @@ class BackgroundProcess
     /**
      * Override this method to perform any actions required on each queue item.
      * Return the modified item for further processing in the next pass through.
-     * Or, return true just to remove the item from the queue.
+     * Or, return true/false just to remove the item from the queue.
      *
      * @param mixed $workload
      * @return mixed TRUE if succeeded, FALSE if failed or workload for new task.
@@ -389,14 +423,16 @@ class BackgroundProcess
      */
     protected function taskComplete($workload, $response)
     {
-        $this->increaseTasksCompletedCount(1);
+        $this->increaseTasksCompleted(1);
     }
 
     /**
      * @param string $batchName
-     * @param \NSCL\WordPress\Async\TasksBatches $batches
+     * @param \NSCL\WordPress\Async\BatchesList $batches
      */
-    protected function batchComplete($batchName, $batches) {}
+    protected function batchComplete($batchName, $batches) {
+        $this->increaseBatchesCompleted(1);
+    }
 
     protected function afterComplete()
     {
@@ -408,7 +444,7 @@ class BackgroundProcess
 
         do_action($this->name . '_completed');
 
-        $this->cron->unschedule();
+        $this->unscheduleCron();
         $this->clearOptions();
     }
 
@@ -424,10 +460,11 @@ class BackgroundProcess
 
     protected function clearOptions()
     {
-        delete_option($this->name . '_abort');
-        delete_option($this->name . '_batches_total_count');
-        delete_option($this->name . '_tasks_total_count');
-        delete_option($this->name . '_tasks_completed_count');
+        $this->deleteOption('abort');
+        $this->deleteOption('batches_count');
+        $this->deleteOption('batches_completed');
+        $this->deleteOption('tasks_count');
+        $this->deleteOption('tasks_completed');
     }
 
     /**
@@ -437,9 +474,29 @@ class BackgroundProcess
      */
     protected function shouldStop()
     {
-        return $this->executionLimits->timeExceeded($this->startTime)
-            || $this->executionLimits->memoryExceeded()
+        return $this->timeExceeded()
+            || $this->memoryExceeded()
             || $this->isAborting();
+    }
+
+    /**
+     * @return bool
+     */
+    protected function timeExceeded()
+    {
+        $timeLeft = $this->startTime + $this->availableTime - time();
+        return $timeLeft <= $this->timeReserve; // N seconds in reserve
+    }
+
+    /**
+     * @return bool
+     */
+    protected function memoryExceeded()
+    {
+        $memoryUsed = memory_get_usage(true);
+        $memoryLimit = $this->availableMemory * $this->memoryFactor;
+
+        return $memoryUsed >= $memoryLimit;
     }
 
     /**
@@ -448,7 +505,7 @@ class BackgroundProcess
     public function isAborting()
     {
         if ($this->isAborting) {
-            // No need to request option from database anymore
+            // No need to request option value from database anymore
             return true;
         }
 
@@ -474,41 +531,216 @@ class BackgroundProcess
     }
 
     /**
-     * @return \NSCL\WordPress\Async\Cron
+     * @return bool
      */
-    protected function instantiateCron()
+    public function isEmptyQueue()
     {
-        return new Cron(
-            $this->name,
-            [$this, 'maybeHandle'],
-            \MINUTE_IN_SECONDS * $this->cronInterval,
-            $this->intervalLabel()
-        );
+        return $this->batchesLeft() == 0;
     }
 
     /**
-     * @return string
+     * @return bool
      */
-    protected function intervalLabel()
+    public function isCronScheduled()
     {
-        return sprintf(__('Every %d Minutes'), $this->cronInterval);
+        $timestamp = wp_next_scheduled($this->cronName);
+        return $timestamp !== false;
     }
 
     /**
-     * @return \NSCL\WordPress\Async\ExecutionLimits
+     * @return bool
      */
-    protected function instantiateExecutionLimits()
+    public function scheduleCron()
     {
-        return new ExecutionLimits();
+        if (!$this->isCronScheduled()) {
+            return wp_schedule_event(time(), $this->cronIntervalName, $this->cronName);
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * @return bool
+     */
+    public function unscheduleCron()
+    {
+        $timestamp = wp_next_scheduled($this->cronName);
+
+        if ($timestamp !== false) {
+            return wp_unschedule_event($timestamp, $this->cronName);
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * Callback for filter "cron_schedules".
+     *
+     * @param array $intervals
+     * @return array
+     */
+    public function registerCronInterval($intervals)
+    {
+        $intervals[$this->cronIntervalName] = [
+            'interval' => \MINUTE_IN_SECONDS * $this->cronInterval,
+            'display'  => sprintf(__('Every %d Minutes'), $this->cronInterval)
+        ];
+
+        return $intervals;
+    }
+
+    /**
+     * @param int $decimals Optional. 0 digits by default.
+     * @return float The progress value in range [0; 100].
+     */
+    public function tasksProgress($decimals = 0)
+    {
+        return $this->getProgress($this->tasksCompleted(), $this->tasksCount(), $decimals);
+    }
+
+    /**
+     * @param int $decimals Optional. 0 digits by default.
+     * @return float The progress value in range [0; 100].
+     */
+    public function batchesProgress($decimals = 0)
+    {
+        return $this->getProgress($this->batchesCompleted(), $this->batchesCount(), $decimals);
+    }
+
+    /**
+     * @param int $completed
+     * @param int $total
+     * @param int $decimals
+     * @return float
+     */
+    protected function getProgress($completed, $total, $decimals)
+    {
+        if ($total > 0) {
+            $progress = round($completed / $total * 100, $decimals);
+            $progress = min($progress, 100); // Don't exceed the value of 100
+        } else {
+            $progress = 100; // All of nothing done
+        }
+
+        return $progress;
+    }
+
+    /**
+     * @param int $increment
+     */
+    protected function increaseTasksCount($increment)
+    {
+        $this->updateOption('tasks_count', $this->tasksCount() + $increment);
+    }
+
+    /**
+     * @param int $increment
+     */
+    protected function increaseTasksCompleted($increment)
+    {
+        $this->updateOption('tasks_completed', $this->tasksCompleted() + $increment);
+    }
+
+    /**
+     * @param int $increment
+     */
+    protected function increaseBatchesCount($increment)
+    {
+        $this->updateOption('batches_count', $this->batchesCount() + $increment);
+    }
+
+    /**
+     * @param int $increment
+     */
+    protected function increaseBatchesCompleted($increment)
+    {
+        $this->updateOption('batches_completed', $this->batchesCompleted() + $increment);
+    }
+
+    /**
+     * @return int
+     */
+    public function tasksCount()
+    {
+        return $this->getOptionNumber('tasks_count');
+    }
+
+    /**
+     * @return int
+     */
+    public function tasksCompleted()
+    {
+        return $this->getOptionNumber('tasks_completed');
+    }
+
+    /**
+     * @return int
+     */
+    public function tasksLeft()
+    {
+        return $this->tasksCount() - $this->tasksCompleted();
+    }
+
+    /**
+     * @return int
+     */
+    public function batchesCount()
+    {
+        return $this->getOptionNumber('batches_count');
+    }
+
+    /**
+     * @return int
+     */
+    public function batchesCompleted()
+    {
+        return $this->getOptionNumber('batches_completed');
+    }
+
+    /**
+     * @return int
+     */
+    public function batchesLeft()
+    {
+        return $this->batchesCount() - $this->batchesCompleted();
+    }
+
+    /**
+     * @param string $option
+     * @param mixed $value
+     * @param string $autoload Optional. "no" by default.
+     */
+    protected function updateOption($option, $value, $autoload = 'no')
+    {
+        // Option suffix $this->name is less than lock and transient suffixes
+        update_option("{$this->name}_{$option}", $value, $autoload);
+    }
+
+    /**
+     * @param string $option
+     * @param int $default Optional. 0 by default.
+     * @return int
+     */
+    protected function getOptionNumber($option, $default = 0)
+    {
+        return (int)get_option("{$this->name}_{$option}", $default);
+    }
+
+    /**
+     * @param string $option
+     */
+    protected function deleteOption($option)
+    {
+        delete_option("{$this->name}_{$option}");
     }
 
     /**
      * @return self
      */
-    public function basicAuth()
+    public function basicAuth($username, $password)
     {
-        add_filter('http_request_args', function ($request) {
-            $request['headers']['Authorization'] = 'Basic ' . base64_encode(USERNAME . ':' . PASSWORD);
+        add_filter('http_request_args', function ($request) use ($username, $password) {
+            $request['headers']['Authorization'] = 'Basic ' . base64_encode($username . ':' . $password);
             return $request;
         });
 
@@ -528,14 +760,16 @@ class BackgroundProcess
      * Get value of read-only field.
      *
      * @param string $name Field name.
-     * @return mixed
+     * @return mixed Field value or NULL.
      */
     public function __get($name)
     {
-        if (in_array($name, ['name', 'startTime', 'lockTime', 'cron', 'executionLimits'])) {
+        if (in_array($name, ['name', 'cronName', 'cronIntervalName',
+            'startTime', 'availableTime', 'availableMemory'])
+        ) {
             return $this->$name;
         } else {
-            return false;
+            return null;
         }
     }
 }

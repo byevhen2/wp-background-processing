@@ -2,12 +2,12 @@
 
 namespace NSCL\WordPress\Async;
 
-class TasksBatches implements \Iterator
+class BatchesList implements \Iterator
 {
     protected $process = 'wpbg_process'; // Name of the backgorund process
 
     /**
-     * @var array [Batch name => TasksBatch object or NULL]. If NULL then load
+     * @var array [Batch name => TasksList object or NULL]. If NULL then load
      * the batch only when required (lazy loading).
      */
     protected $batches = [];
@@ -16,7 +16,7 @@ class TasksBatches implements \Iterator
     protected $lastIndex = -1;
 
     /**
-     * @param array $tasksBatches [Batch name => TasksBatch object or NULL]
+     * @param array $tasksBatches [Batch name => TasksList object or NULL]
      * @param string $processName
      */
     public function __construct($tasksBatches, $processName)
@@ -34,6 +34,7 @@ class TasksBatches implements \Iterator
             unset($this->batches[$batchName]);
 
             // It's not necessary to remove $batchName from $this->batchNames
+            // here. After rewind() all will be OK
         }
     }
 
@@ -64,7 +65,7 @@ class TasksBatches implements \Iterator
 
     public function rewind()
     {
-        // Reset the indexes and get rid of "gaps" (indexes of removed items)
+        // Reset the list of names (get rid of removed ones)
         $this->batchNames = array_keys($this->batches);
         $this->currentIndex = 0;
         $this->lastIndex = count($this->batchNames) - 1;
@@ -79,7 +80,7 @@ class TasksBatches implements \Iterator
     }
 
     /**
-     * @return \NSCL\WordPress\Async\TasksBatch
+     * @return \NSCL\WordPress\Async\TasksList
      */
     public function current()
     {
@@ -89,7 +90,7 @@ class TasksBatches implements \Iterator
         // Load the batch
         if (is_null($currentBatch)) {
             $batchTasks = get_option($currentBatchName, []);
-            $currentBatch = new TasksBatch($batchTasks, $this->process, $currentBatchName);
+            $currentBatch = new TasksList($batchTasks, $this->process, $currentBatchName);
 
             $this->batches[$currentBatchName] = $currentBatch;
         }
@@ -107,9 +108,24 @@ class TasksBatches implements \Iterator
 
     public function next()
     {
-        // We will not have "gaps" in indexes because we'll always remove only
-        // the current batch
+        // We will not have "gaps" in indexes because we always remove only the
+        // current batch
         $this->currentIndex++;
+    }
+
+    /**
+     * Get value of read-only field.
+     *
+     * @param string $name Field name.
+     * @return mixed Field value or NULL.
+     */
+    public function __get($name)
+    {
+        if (in_array($name, ['process'])) {
+            return $this->$name;
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -118,13 +134,13 @@ class TasksBatches implements \Iterator
      * @param string $processName
      * @return static
      */
-    public static function createOnTasks($tasks, $batchSize, $processName)
+    public static function createWithTasks($tasks, $batchSize, $processName)
     {
         $tasksBatches = array_chunk($tasks, $batchSize);
         $batches = [];
 
         foreach ($tasksBatches as $tasksBatch) {
-            $batch = new TasksBatch($tasksBatch, $processName);
+            $batch = new TasksList($tasksBatch, $processName);
             $batches[$batch->name] = $batch;
         }
 

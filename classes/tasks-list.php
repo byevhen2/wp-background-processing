@@ -2,7 +2,7 @@
 
 namespace NSCL\WordPress\Async;
 
-class TasksBatch implements \Iterator
+class TasksList implements \Iterator
 {
     protected $process = 'wpbg_process'; // Name of the backgorund process
     protected $name = ''; // wpbg_process_batch_bf46955b5005c1893583b64c0ff440be
@@ -32,13 +32,12 @@ class TasksBatch implements \Iterator
      * Generate unique key based on microtime(). Queue items are given unique
      * keys so that they can be merged upon save.
      *
-     * @see \NSCL\WordPress\Async\BatchMethods::batchesLeft()
-     * @see \NSCL\WordPress\Async\TasksBatches::createFromOptions()
-     * @see \NSCL\WordPress\Async\TasksBatches::removeAll()
-     *
      * @param int $maxLength Optional. Length limit of the key. 64 by default
      *     (the maximum length of the WordPress option name).
      * @return string The key like "wpbg_process_batch_bf46955b5005c1893583b64c0ff440be".
+     *
+     * @see \NSCL\WordPress\Async\BatchesList::createFromOptions()
+     * @see \NSCL\WordPress\Async\BatchesList::removeAll()
      */
     public function generateKey($maxLength = 64)
     {
@@ -65,8 +64,7 @@ class TasksBatch implements \Iterator
     public function removeTask($index)
     {
         if (isset($this->tasks[$index])) {
-            // PHP does not reset the indexes when removing the item (from the
-            // beginning or in the middle)
+            // PHP does not reset the indexes when removes the item from any position
             unset($this->tasks[$index]);
         }
     }
@@ -140,14 +138,14 @@ class TasksBatch implements \Iterator
      * Get value of read-only field.
      *
      * @param string $name Field name.
-     * @return mixed
+     * @return mixed Field value or NULL.
      */
     public function __get($name)
     {
-        if (in_array($name, ['name'])) {
+        if (in_array($name, ['process', 'name'])) {
             return $this->$name;
         } else {
-            return false;
+            return null;
         }
     }
 }
