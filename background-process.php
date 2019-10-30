@@ -173,9 +173,15 @@ class BackgroundProcess
      */
     public function touchWhenReady($force = false)
     {
-        add_action('init', function () use ($force) {
+        if (did_action('init')) {
+            // Already ready
             $this->touch($force);
-        });
+        } else {
+            // Wait for "init" action
+            add_action('init', function () use ($force) {
+                $this->touch($force);
+            });
+        }
     }
 
     public function cancel()
