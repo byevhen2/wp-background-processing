@@ -378,7 +378,7 @@ class BackgroundProcess
                         }
 
                         // Stop doing tasks
-                        break 2;
+                        break 3;
                     }
                 } // For each task
 
