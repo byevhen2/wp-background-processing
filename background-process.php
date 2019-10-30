@@ -364,7 +364,7 @@ class BackgroundProcess
                     // Add new task if the previous one returned new workload
                     if (!is_bool($response) && !empty($response)) { // Skip NULLs
                         $tasks->addTask($response);
-                        $this->increaseTasksCount(1);
+                        $this->increaseTasksCount(1, false);
                     }
 
                     $this->taskComplete($workload, $response);
@@ -651,10 +651,11 @@ class BackgroundProcess
 
     /**
      * @param int $increment
+     * @param bool $useCache Optional. TRUE by default.
      */
-    protected function increaseTasksCount($increment)
+    protected function increaseTasksCount($increment, $useCache = true)
     {
-        $this->updateOption('tasks_count', $this->tasksCount() + $increment);
+        $this->updateOption('tasks_count', $this->tasksCount($useCache) + $increment);
     }
 
     /**
@@ -682,11 +683,12 @@ class BackgroundProcess
     }
 
     /**
+     * @param bool $useCache Optional. TRUE by default.
      * @return int
      */
-    public function tasksCount()
+    public function tasksCount($useCache = true)
     {
-        return $this->getOptionNumber('tasks_count');
+        return $this->getOptionNumber('tasks_count', 0, $useCache);
     }
 
     /**
@@ -743,11 +745,16 @@ class BackgroundProcess
     /**
      * @param string $option
      * @param int $default Optional. 0 by default.
+     * @param bool $useCache Optional. TRUE by default.
      * @return int
      */
-    protected function getOptionNumber($option, $default = 0)
+    protected function getOptionNumber($option, $default = 0, $useCache = true)
     {
-        return (int)get_option("{$this->name}_{$option}", $default);
+        if ($useCache) {
+            return (int)get_option("{$this->name}_{$option}", $default);
+        } else {
+            return (int)get_uncached_option("{$this->name}_{$option}", $default);
+        }
     }
 
     /**
