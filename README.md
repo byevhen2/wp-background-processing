@@ -4,6 +4,13 @@ WordPress background processing library.
 Inspired by [WP Background Processing](https://github.com/deliciousbrains/wp-background-processing).
 
 ## Requirements
+**Recommended**:
+* PHP 7
+* WordPress 5
+
+**Minimal**:
+* PHP 5.4
+* WordPress 4
 
 ## Background Process
 ### Properties
