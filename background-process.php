@@ -30,6 +30,12 @@ class BackgroundProcess
     public $memoryLimit  = 2000000000; // Max memory limit in BYTES
     public $memoryFactor = 0.9; // {memoryFactor}% of available memory. Range: [0; 1]
 
+    /**
+     * @var int Helthchecking cron interval time in <b>seconds</b>:
+     * $cronInterval * 60.
+     */
+    protected $cronTime = 300;
+
     /** @var int Start time of current process. */
     protected $startTime = 0;
 
@@ -57,6 +63,7 @@ class BackgroundProcess
         $this->name = $this->prefix . '_' . $this->action;       // "wpdb_process"
         $this->cronName = $this->name . '_cron';                 // "wpbg_process_cron"
         $this->cronIntervalName = $this->cronName . '_interval'; // "wpbg_process_cron_interval"
+        $this->cronTime = \MINUTE_IN_SECONDS * $this->cronInterval;
 
         $this->addActions();
     }
@@ -119,29 +126,11 @@ class BackgroundProcess
      */
     public function run()
     {
-        // No need to run cron and AJAX at the same time and make two equal
-        // calls of maybeHandle()
-        $callAjax = true;
+        // Dispatch AJAX event
+        $requestUrl = add_query_arg($this->requestQueryArgs(), $this->requestUrl());
+        $response = wp_remote_post(esc_url_raw($requestUrl), $this->requestPostArgs());
 
-        // Try to run healthchecking cron (will run immediately when scheduled
-        // first time)
-        if (!$this->isCronScheduled()) { // Else don't wait for the cron
-            // If fail to schedule, then use AJAX method
-            $callAjax = !$this->scheduleCron();
-        }
-
-        if ($callAjax) {
-            // Dispatch AJAX event
-            $requestUrl = $this->requestUrl();
-            $requestUrl = add_query_arg($this->requestQueryArgs(), $requestUrl);
-
-            $requestArgs = $this->requestPostArgs();
-            $response = wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
-
-            return is_wp_error($response) ? $response : true;
-        } else {
-            return true; // Cron runned
-        }
+        return is_wp_error($response) ? $response : true;
     }
 
     /**
@@ -240,6 +229,10 @@ class BackgroundProcess
         // Check nonce of AJAX call
         if (wp_doing_ajax()) {
             check_ajax_referer($this->name, 'wpbg_nonce');
+
+            // Nonce OK, schedule cron event. But don't run immediately, AJAX
+            // handler already starting the process
+            $this->scheduleCron($this->cronTime);
         }
 
         if (!$this->isEmptyQueue() && !$this->isRunning()) {
@@ -572,19 +565,23 @@ class BackgroundProcess
     }
 
     /**
-     * @return bool
+     * @param int $waitTime Optional. Pause before executing the cron event. 0
+     *     <b>seconds</b> by default (run immediately).
+     * @return bool|null Before WordPress 5.1 function wp_schedule_event()
+     *     sometimes returned NULL.
      */
-    public function scheduleCron()
+    public function scheduleCron($waitTime = 0)
     {
         if (!$this->isCronScheduled()) {
-            return wp_schedule_event(time(), $this->cronIntervalName, $this->cronName);
+            return wp_schedule_event(time() + $waitTime, $this->cronIntervalName, $this->cronName);
         } else {
             return true;
         }
     }
 
     /**
-     * @return bool
+     * @return bool|null Before WordPress 5.1 function wp_unschedule_event()
+     *     sometimes returned NULL.
      */
     public function unscheduleCron()
     {
@@ -606,7 +603,7 @@ class BackgroundProcess
     public function registerCronInterval($intervals)
     {
         $intervals[$this->cronIntervalName] = [
-            'interval' => \MINUTE_IN_SECONDS * $this->cronInterval,
+            'interval' => $this->cronTime,
             'display'  => sprintf(__('Every %d Minutes'), $this->cronInterval)
         ];
 
@@ -795,7 +792,7 @@ class BackgroundProcess
      */
     public function __get($name)
     {
-        if (in_array($name, ['name', 'cronName', 'cronIntervalName',
+        if (in_array($name, ['name', 'cronName', 'cronIntervalName', 'cronTime',
             'startTime', 'availableTime', 'availableMemory'])
         ) {
             return $this->$name;
