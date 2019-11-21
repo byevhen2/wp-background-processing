@@ -3,7 +3,6 @@
 namespace NSCL\WordPress\Async;
 
 require 'includes/functions.php';
-require 'includes/polyfills.php';
 
 require 'classes/tasks-list.php';
 require 'classes/batches-list.php';
