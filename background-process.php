@@ -2,6 +2,10 @@
 
 namespace NSCL\WordPress\Async;
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 require 'includes/functions.php';
 
 require 'classes/tasks-list.php';
