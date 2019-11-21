@@ -7,6 +7,8 @@ if (!function_exists('esc_sql_underscores')) {
      *
      * @param string $pattern
      * @return string
+     *
+     * @since 1.0
      */
     function esc_sql_underscores($pattern)
     {
@@ -21,6 +23,8 @@ if (!function_exists('get_uncached_option')) {
      * @return mixed Option value or default value.
      *
      * @global \wpdb $wpdb
+     *
+     * @since 1.0
      */
     function get_uncached_option($option, $default = false)
     {

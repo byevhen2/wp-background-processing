@@ -11,6 +11,9 @@ require 'includes/functions.php';
 require 'classes/tasks-list.php';
 require 'classes/batches-list.php';
 
+/**
+ * @since 1.0
+ */
 class BackgroundProcess
 {
     /** @var string Process name: "{prefix}_{action}". */

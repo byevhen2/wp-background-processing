@@ -2,6 +2,9 @@
 
 namespace NSCL\WordPress\Async;
 
+/**
+ * @since 1.0
+ */
 class TasksList implements \Iterator
 {
     protected $process = 'wpbg_process'; // Name of the backgorund process
