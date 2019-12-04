@@ -167,6 +167,22 @@ class BatchesList implements \Iterator
 
     /**
      * @param string $process Process name.
+     * @return bool
+     *
+     * @global \wpdb $wpdb
+     */
+    public static function hasMore($process)
+    {
+        global $wpdb;
+
+        $query = "SELECT COUNT(*) FROM {$wpdb->options} WHERE `option_name` LIKE %s";
+        $count = (int)$wpdb->get_var($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
+
+        return $count > 0;
+    }
+
+    /**
+     * @param string $process Process name.
      *
      * @global \wpdb $wpdb
      */

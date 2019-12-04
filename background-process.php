@@ -537,28 +537,17 @@ class BackgroundProcess
 
     /**
      * @return bool
-     *
-     * @global \wpdb $wpdb
      */
     public function isEmptyQueue()
     {
-        global $wpdb;
-
         // Don't rely on batchesLeft() here:
-        // 1) the method will return cached value of the option and will not see
-        //    the changes outside of the process;
-        // 2) methods like touch() will not work properly if there are no values
-        //    of the options "batches_count" and "batches_complete" (initial
-        //    state or after the process completes).
+        //     1) the method will return cached value of the option and will not
+        //        see the changes outside of the process;
+        //     2) methods like touch() will not work properly if there are no
+        //        values of the options "batches_count" and "batches_complete"
+        //        (initial state or after the process completes).
 
-        $count = (int)$wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT COUNT(*) FROM {$wpdb->options} WHERE `option_name` LIKE %s",
-                esc_sql_underscores($this->name . '_batch_%')
-            )
-        );
-
-        return $count == 0;
+        return !BatchesList::hasMore($this->name);
     }
 
     /**
