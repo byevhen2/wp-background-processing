@@ -19,14 +19,14 @@ class BatchesList implements \Iterator
     protected $lastIndex = -1;
 
     /**
-     * @param array $tasksBatches [Batch name => TasksList object or NULL]
-     * @param string $processName
+     * @param string $process Process name.
+     * @param array $batches [Batch name => TasksList object or NULL]
      */
-    public function __construct($tasksBatches, $processName)
+    public function __construct($process, $batches)
     {
-        $this->process    = $processName;
-        $this->batches    = $tasksBatches;
-        $this->batchNames = array_keys($tasksBatches);
+        $this->process    = $process;
+        $this->batches    = $batches;
+        $this->batchNames = array_keys($batches);
         $this->lastIndex  = count($this->batchNames) - 1;
     }
 
@@ -43,11 +43,11 @@ class BatchesList implements \Iterator
 
     public function save()
     {
-        array_walk($this->batches, function ($batch) {
+        foreach ($this->batches as $batch) {
             if (!is_null($batch)) {
                 $batch->save();
             }
-        });
+        }
     }
 
     /**
@@ -93,7 +93,7 @@ class BatchesList implements \Iterator
         // Load the batch
         if (is_null($currentBatch)) {
             $batchTasks = get_option($currentBatchName, []);
-            $currentBatch = new TasksList($batchTasks, $this->process, $currentBatchName);
+            $currentBatch = new TasksList($this->process, $batchTasks, $currentBatchName);
 
             $this->batches[$currentBatchName] = $currentBatch;
         }
@@ -132,61 +132,49 @@ class BatchesList implements \Iterator
     }
 
     /**
-     * @param array $tasks
-     * @param int $batchSize
-     * @param string $processName
+     * @param string $process Process name.
+     * @param array $tasks Optional.
+     * @param int $batchSize Optional. 100 by default. Use only in conjunction
+     *     with $tasks.
      * @return static
+     *
+     * @global \wpdb $wpdb
      */
-    public static function createWithTasks($tasks, $batchSize, $processName)
+    public static function create($process, $tasks = null, $batchSize = 100)
     {
-        $tasksBatches = array_chunk($tasks, $batchSize);
-        $batches = [];
+        global $wpdb;
 
-        foreach ($tasksBatches as $tasksBatch) {
-            $batch = new TasksList($tasksBatch, $processName);
-            $batches[$batch->name] = $batch;
+        if (is_null($tasks)) {
+            // Get the batches from the database
+            $query = "SELECT `option_name` FROM {$wpdb->options} WHERE `option_name` LIKE %s ORDER BY `option_id` ASC";
+            $names = $wpdb->get_col($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
+
+            // [Batch name => null]
+            $batches = array_combine($names, array_fill(0, count($names), null));
+        } else {
+            // Create batches on existing tasks
+            $chunks = array_chunk($tasks, $batchSize);
+            $batches = [];
+
+            foreach ($chunks as $tasksChunk) {
+                $batch = new TasksList($process, $tasksChunk);
+                $batches[$batch->name] = $batch;
+            }
         }
 
-        return new static($batches, $processName);
+        return new static($process, $batches);
     }
 
     /**
-     * @param string $processName
-     * @return static
+     * @param string $process Process name.
      *
      * @global \wpdb $wpdb
      */
-    public static function createFromOptions($processName)
+    public static function removeAll($process)
     {
         global $wpdb;
 
-        $batchNames = $wpdb->get_col(
-            $wpdb->prepare(
-                "SELECT `option_name` FROM {$wpdb->options} WHERE `option_name` LIKE %s ORDER BY `option_id` ASC",
-                esc_sql_underscores($processName . '_batch_%')
-            )
-        );
-
-        // [Batch name => NULL]
-        $batches = array_combine($batchNames, array_fill(0, count($batchNames), null));
-
-        return new static($batches, $processName);
-    }
-
-    /**
-     * @param string $processName
-     *
-     * @global \wpdb $wpdb
-     */
-    public static function removeAll($processName)
-    {
-        global $wpdb;
-
-        $wpdb->query(
-            $wpdb->prepare(
-                "DELETE FROM {$wpdb->options} WHERE `option_name` LIKE %s",
-                esc_sql_underscores($processName . '_batch_%')
-            )
-        );
+        $query = "DELETE FROM {$wpdb->options} WHERE `option_name` LIKE %s";
+        $wpdb->query($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
     }
 }

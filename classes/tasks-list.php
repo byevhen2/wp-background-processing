@@ -14,13 +14,13 @@ class TasksList implements \Iterator
     protected $lastIndex = -1;
 
     /**
+     * @param string $process Process name.
      * @param array $tasks
-     * @param string $processName
      * @param string $batchName Optional. "" by default (generate automatically).
      */
-    public function __construct($tasks, $processName, $batchName = '')
+    public function __construct($process, $tasks, $batchName = '')
     {
-        $this->process   = $processName;
+        $this->process   = $process;
         $this->tasks     = $tasks;
         $this->lastIndex = count($tasks) - 1;
 
@@ -38,9 +38,6 @@ class TasksList implements \Iterator
      * @param int $maxLength Optional. Length limit of the key. 64 by default
      *     (the maximum length of the WordPress option name).
      * @return string The key like "wpbg_process_batch_bf46955b5005c1893583b64c0ff440be".
-     *
-     * @see \NSCL\WordPress\Async\BatchesList::createFromOptions()
-     * @see \NSCL\WordPress\Async\BatchesList::removeAll()
      */
     public function generateKey($maxLength = 64)
     {

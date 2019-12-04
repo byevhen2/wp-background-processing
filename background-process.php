@@ -116,7 +116,7 @@ class BackgroundProcess
      */
     public function addTasks($tasks)
     {
-        $batches = BatchesList::createWithTasks($tasks, $this->batchSize, $this->name);
+        $batches = BatchesList::create($this->name, $tasks, $this->batchSize);
         $batches->save();
 
         $this->increaseBatchesCount($batches->count());
@@ -347,7 +347,7 @@ class BackgroundProcess
         $this->beforeStart();
 
         do {
-            $batches = BatchesList::createFromOptions($this->name);
+            $batches = BatchesList::create($this->name);
 
             foreach ($batches as $batchName => $tasks) {
                 foreach ($tasks as $index => $workload) {
