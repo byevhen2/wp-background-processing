@@ -6,10 +6,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require 'includes/functions.php';
-
-require 'classes/tasks-list.php';
-require 'classes/batches-list.php';
+require 'includes/tasks-list.php';
+require 'includes/batches-list.php';
 
 /**
  * @since 1.0
@@ -165,7 +163,7 @@ class BackgroundProcess
      */
     public function touch($force = false)
     {
-        if (!$force && (wp_doing_ajax() || wp_doing_cron())) {
+        if (!$force && ($this->isDoingAjax() || $this->isDoingCron())) {
             return;
         }
 
@@ -248,7 +246,7 @@ class BackgroundProcess
         session_write_close();
 
         // Check nonce of AJAX call
-        if (wp_doing_ajax()) {
+        if ($this->isDoingAjax()) {
             check_ajax_referer($this->name, 'wpbg_nonce');
 
             // Nonce OK, schedule cron event. But don't run immediately, AJAX
@@ -529,7 +527,7 @@ class BackgroundProcess
             return true;
         }
 
-        $this->isAborting = (bool)get_uncached_option($this->optionAbort, false);
+        $this->isAborting = (bool)$this->getUncachedOption($this->optionAbort, false);
 
         return $this->isAborting;
     }
@@ -758,7 +756,34 @@ class BackgroundProcess
         if ($useCache) {
             return get_option($option, $default);
         } else {
-            return get_uncached_option($option, $default);
+            return $this->getUncachedOption($option, $default);
+        }
+    }
+
+    /**
+     * @param string $option
+     * @param mixed $default Optional. FALSE by default.
+     * @return mixed
+     *
+     * @global \wpdb $wpdb
+     */
+    protected function getUncachedOption($option, $default = false)
+    {
+        global $wpdb;
+
+        // The code partly from function get_option()
+        $suppressStatus = $wpdb->suppress_errors(); // Set to suppress errors and
+                                                    // save the previous value
+
+        $query = "SELECT `option_value` FROM {$wpdb->options} WHERE `option_name` = %s LIMIT 1";
+        $row   = $wpdb->get_row($wpdb->prepare($query, $option));
+
+        $wpdb->suppress_errors($suppressStatus);
+
+        if (is_object($row)) {
+            return maybe_unserialize($row->option_value);
+        } else {
+            return $default;
         }
     }
 
@@ -777,10 +802,34 @@ class BackgroundProcess
 
     protected function fireDie()
     {
-        if (wp_doing_ajax()) {
+        if ($this->isDoingAjax()) {
             wp_die();
         } else {
             exit(0); // Don't call wp_die() on cron
+        }
+    }
+
+    /**
+     * @return bool
+     */
+    protected function isDoingAjax()
+    {
+        if (function_exists('wp_doing_ajax')) {
+            return wp_doing_ajax(); // Since WordPress 4.7
+        } else {
+            return apply_filters('wp_doing_ajax', defined('DOING_AJAX') && DOING_AJAX);
+        }
+    }
+
+    /**
+     * @return bool
+     */
+    protected function isDoingCron()
+    {
+        if (function_exists('wp_doing_cron')) {
+            return wp_doing_cron(); // Since WordPress 4.8
+        } else {
+            return apply_filters('wp_doing_cron', defined('DOING_CRON') && DOING_CRON);
         }
     }
 

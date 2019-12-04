@@ -147,7 +147,7 @@ class BatchesList implements \Iterator
         if (is_null($tasks)) {
             // Get the batches from the database
             $query = "SELECT `option_name` FROM {$wpdb->options} WHERE `option_name` LIKE %s ORDER BY `option_id` ASC";
-            $names = $wpdb->get_col($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
+            $names = $wpdb->get_col($wpdb->prepare($query, "{$process}\_batch\_%")); // Escape wildcard "_"
 
             // [Batch name => null]
             $batches = array_combine($names, array_fill(0, count($names), null));
@@ -176,7 +176,7 @@ class BatchesList implements \Iterator
         global $wpdb;
 
         $query = "SELECT COUNT(*) FROM {$wpdb->options} WHERE `option_name` LIKE %s";
-        $count = (int)$wpdb->get_var($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
+        $count = (int)$wpdb->get_var($wpdb->prepare($query, "{$process}\_batch\_%")); // Escape wildcard "_"
 
         return $count > 0;
     }
@@ -191,6 +191,6 @@ class BatchesList implements \Iterator
         global $wpdb;
 
         $query = "DELETE FROM {$wpdb->options} WHERE `option_name` LIKE %s";
-        $wpdb->query($wpdb->prepare($query, esc_sql_underscores("{$process}_batch_%")));
+        $wpdb->query($wpdb->prepare($query, "{$process}\_batch\_%")); // Escape wildcard "_"
     }
 }
