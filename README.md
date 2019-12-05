@@ -4,13 +4,13 @@ WordPress background processing library.
 Inspired by [WP Background Processing](https://github.com/deliciousbrains/wp-background-processing).
 
 ## Requirements
-**Recommended**:
-* PHP 7
-* WordPress 5
-
 **Minimal**:
-* PHP 5.4
-* WordPress 4
+- PHP 5.4
+- WordPress 4.6
+
+**Recommended**:
+- PHP 7
+- WordPress 5
 
 ## Background Process
 ### Properties
@@ -19,9 +19,9 @@ Process prefix / vendor prefix.
 
 `public $action`
 Should be set to a unique name.
-The length of option name is limited in 64 characters. So the length should be 35 symbols or less if the prefix is bigger. Option name will consist of:
+The length of option name is limited in 191 characters (64 characters before release of WordPress 4.4). So the length should be 162 symbols, or less if the prefix is bigger. Option name will consist of:
 * (5) prefix "wpbg" with separator "_"
-* (35 <=) action name of background process
+* (162 <=) action name of background process
 * (5) lock option suffix "_lock"
 * (19) WP's transient prefix "_transient_timeout_"
 

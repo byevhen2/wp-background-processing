@@ -35,11 +35,11 @@ class TasksList implements \Iterator
      * Generate unique key based on microtime(). Queue items are given unique
      * keys so that they can be merged upon save.
      *
-     * @param int $maxLength Optional. Length limit of the key. 64 by default
-     *     (the maximum length of the WordPress option name).
+     * @param int $maxLength Optional. Length limit of the key. 191 by default
+     *     (the maximum length of the WordPress option name since release 4.4).
      * @return string The key like "wpbg_process_batch_bf46955b5005c1893583b64c0ff440be".
      */
-    public function generateKey($maxLength = 64)
+    public function generateKey($maxLength = 191)
     {
         // bf46955b5005c1893583b64c0ff440be
         $hash = md5(microtime() . rand());

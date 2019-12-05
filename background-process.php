@@ -16,7 +16,7 @@ class BackgroundProcess
 {
     // Properties
     public $prefix       = 'wpbg';    // Process prefix / vendor prefix
-    public $action       = 'process'; // Process action name
+    public $action       = 'process'; // Process action name. Should be less or equal to 162 characters
     public $batchSize    = 100; // Tasks limit in each batch
     public $cronInterval = 5;   // Helthchecking cron interval time in MINUTES
     public $lockTime     = 30;  // Lock time in SECONDS
