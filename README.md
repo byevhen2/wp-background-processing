@@ -61,37 +61,37 @@ class BackgroundProcess
 * _(Optional)_ If your site is behind BasicAuth then you need to attach your BasicAuth credentials to requests using `basicAuth()` method.
 
 ### Properties
-`prefix`
+###### `prefix`
 Process/vendor prefix.
 
-`action`
+###### `action`
 Should be set to a unique name. The length of option name is limited in **191** characters (64 characters before release of WordPress 4.4). So the length should be **162** symbols, or less if the prefix is bigger. Option name will consist of:
 * (5) prefix "wpbg" with separator "_";
 * (162 <=) action name;
 * (5) lock option suffix "_lock";
 * (19) WP's transient prefix "\_transient_timeout\_".
 
-`batchSize`
+###### `batchSize`
 Tasks limit in each batch.
 
-`cronInterval`
+###### `cronInterval`
 Helthchecking cron interval time in **minutes**.
 
-`lockTime`
+###### `lockTime`
 Lock time in **seconds**.
 
 _Don't lock for too long. The process allowed to work for a long amount of time. But you should use the short time for locks. If the process fail with an error on some task then the progress will freeze for too long._
 
-`maxExecutionTime`
+###### `maxExecutionTime`
 Maximum allowed execution time in **seconds**.
 
-`timeReserve`
+###### `timeReserve`
 Stop **X seconds** before the execution time limit.
 
-`memoryLimit`
+###### `memoryLimit`
 Max memory limit in **bytes**.
 
-`memoryFactor`
+###### `memoryFactor`
 The limitation for the memory usage. The range is \[0; 1\] (where 0.9 is 90%).
 
 ## License
