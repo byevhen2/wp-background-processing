@@ -66,6 +66,9 @@ class BatchesList implements \Iterator
         return $this->count() == 0;
     }
 
+    /**
+     * Iterator method.
+     */
     public function rewind()
     {
         // Reset the list of names (get rid of removed ones)
@@ -75,6 +78,8 @@ class BatchesList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return bool
      */
     public function valid()
@@ -83,6 +88,8 @@ class BatchesList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return \NSCL\WordPress\Async\TasksList
      */
     public function current()
@@ -102,6 +109,8 @@ class BatchesList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return string
      */
     public function key()
@@ -109,6 +118,9 @@ class BatchesList implements \Iterator
         return $this->batchNames[$this->currentIndex];
     }
 
+    /**
+     * Iterator method.
+     */
     public function next()
     {
         // We will not have "gaps" in indexes because we always remove only the

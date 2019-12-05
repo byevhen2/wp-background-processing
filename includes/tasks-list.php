@@ -95,6 +95,9 @@ class TasksList implements \Iterator
         delete_option($this->name);
     }
 
+    /**
+     * Iterator method.
+     */
     public function rewind()
     {
         // Reset the indexes and get rid of "gaps" (indexes of removed items)
@@ -104,6 +107,8 @@ class TasksList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return bool
      */
     public function valid()
@@ -112,6 +117,8 @@ class TasksList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return mixed
      */
     public function current()
@@ -120,6 +127,8 @@ class TasksList implements \Iterator
     }
 
     /**
+     * Iterator method.
+     *
      * @return int
      */
     public function key()
@@ -127,6 +136,9 @@ class TasksList implements \Iterator
         return $this->currentIndex;
     }
 
+    /**
+     * Iterator method.
+     */
     public function next()
     {
         // We will not have "gaps" in indexes because we'll always remove only
