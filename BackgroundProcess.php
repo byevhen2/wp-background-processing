@@ -387,7 +387,7 @@ class BackgroundProcess
      */
     protected function handle()
     {
-        $this->beforeStart();
+        $this->triggerEvent('before_start', $this); // beforeStart()
 
         do {
             $batches = BatchesList::create($this->name);
@@ -434,7 +434,7 @@ class BackgroundProcess
             BatchesList::removeAll($this->name);
         }
 
-        $this->beforeStop();
+        $this->triggerEvent('before_stop', $this); // beforeStop()
 
         // Unlock the process to restart it
         $this->unlock();
@@ -443,21 +443,9 @@ class BackgroundProcess
         if (!$this->isEmptyQueue()) {
             $this->run();
         } else {
-            $this->afterComplete();
+            $this->triggerEvent('after_complete', $this); // afterComplete()
         }
     }
-
-    protected function beforeStart()
-    {
-        // Save the time of the first start
-        $startedAt = (int)$this->getOption($this->options->startedAt, 0);
-
-        if ($startedAt == 0) {
-            $this->updateOption($this->options->startedAt, $this->startTime);
-        }
-    }
-
-    protected function beforeStop() {}
 
     /**
      * Override this method to perform any actions required on each queue item.
@@ -491,28 +479,38 @@ class BackgroundProcess
         $this->statIncrease('batchesCompleted', 1);
     }
 
+    /**
+     * It's an event handler of "before_start".
+     *
+     * @see BackgroundProcess::triggerEvent()
+     */
+    protected function beforeStart()
+    {
+        // Save the time of the first start
+        $startedAt = (int)$this->getOption($this->options->startedAt, 0);
+
+        if ($startedAt == 0) {
+            $this->updateOption($this->options->startedAt, $this->startTime);
+        }
+    }
+
+    /**
+     * It's an event handler of "after_complete".
+     *
+     * @see BackgroundProcess::triggerEvent()
+     */
     protected function afterComplete()
     {
+        // This will trigger do_action("after_cancel") or do_action("after_success")
+        // before do_action("after_complete")
         if ($this->isAborting) {
-            $this->afterCancel();
+            $this->triggerEvent('after_cancel', $this); // afterCancel()
         } else {
-            $this->afterSuccess();
+            $this->triggerEvent('after_success', $this); // afterSuccess()
         }
-
-        do_action($this->name . '_completed');
 
         $this->unscheduleCron();
         $this->deleteOptions();
-    }
-
-    protected function afterSuccess()
-    {
-        do_action($this->name . '_succeeded');
-    }
-
-    protected function afterCancel()
-    {
-        do_action($this->name . '_cancelled');
     }
 
     /**
@@ -811,11 +809,6 @@ class BackgroundProcess
      */
     protected function triggerEvent($action, $_ = null)
     {
-        $event = $args = func_get_args();
-
-        array_shift($args); // Remove the action string from arguments
-        $event[0] .= '_' . $this->name; // ["{action}_{process}", ...$args]
-
         // Get the name of the callback. For example: "afterComplete" for action
         // "after_complete"
         $parts = explode('_', $action);
@@ -823,32 +816,28 @@ class BackgroundProcess
 
         $callback = lcfirst(implode('', $parts));
 
-        // Trigger own handler
+        // Trigger own handler first
         if (method_exists($this, $callback)) {
+            $args = func_get_args();
+            array_shift($args); // Remove the action string from arguments
+
             // Some methods are protected, so you can't just call:
             //     call_user_func_array([$this, $callback], $args) <- Fail
-            // But it also not very cool to put an array in every handler
+            // But it also not very cool to put an array to every handler
             switch (count($args)) {
                 case 1: $this->$callback($args[0]); break;
                 case 2: $this->$callback($args[0], $args[1]); break;
                 case 3: $this->$callback($args[0], $args[1], $args[2]); break;
                 default: $this->$callback($args); break;
             }
-        } else {
-            $this->onEvent($action, $args);
         }
 
         // Trigger WordPress action
+        $event = func_get_args();
+        $event[0] .= '_' . $this->name; // ["{action}_{process}", ...args]
+
         call_user_func_array('do_action', $event);
     }
-
-    /**
-     * @param string $action
-     * @param array $args
-     *
-     * @since 1.1
-     */
-    protected function onEvent($action, $args) {}
 
     /**
      * @return self
