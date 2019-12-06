@@ -6,8 +6,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require 'includes/TasksList.php';
-require 'includes/BatchesList.php';
+require_once __DIR__ . '/includes/TasksList.php';
+require_once __DIR__ . '/includes/BatchesList.php';
 
 /**
  * @since 1.0
