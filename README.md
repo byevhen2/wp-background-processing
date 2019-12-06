@@ -94,5 +94,31 @@ Max memory limit in **bytes**.
 ###### `memoryFactor`
 The limitation for the memory usage. The range is \[0; 1\] (where 0.9 is 90%).
 
+### Actions
+* `before_first_start{$processName}` — on the first start of the process.
+    ```php
+        do_action("before_first_start_{$processName}", BackgroundProcess, int $startTime);
+    ```
+* `before_start_{$processName}` — each time the process starts or continues doing tasks.
+    ```php
+        do_action("before_start_{$processName}", BackgroundProcess);
+    ```
+* `before_stop_{$processName}` — when the process ready to stop (finished or should stop because of execution time or memory limitations).
+    ```php
+        do_action("before_stop_{$processName}", BackgroundProcess);
+    ```
+* `after_cancel_{$processName}` — the process cancels its execution.
+    ```php
+        do_action("after_cancel_{$processName}", BackgroundProcess);
+    ```
+* `after_success_{$processName}` — the process finished all the work.
+    ```php
+        do_action("after_success_{$processName}", BackgroundProcess);
+    ```
+* `after_complete_{$processName}` — each time the process finishes or cancels its work; triggers after _"after_cancel"_ and _"after_success"_.
+    ```php
+        do_action("after_complete_{$processName}", BackgroundProcess, bool $succeeded);
+    ```
+
 ## License
 The project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
