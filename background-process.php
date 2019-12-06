@@ -639,6 +639,19 @@ class BackgroundProcess
     }
 
     /**
+     * An alias of tasksProgress().
+     *
+     * @param int $decimals Optional. 0 digits by default.
+     * @return float The progress value in range [0; 100].
+     *
+     * @since 1.1
+     */
+    public function getProgress($decimals = 0)
+    {
+        return $this->tasksProgress($decimals);
+    }
+
+    /**
      * @param int $decimals Optional. 0 digits by default.
      * @return float The progress value in range [0; 100].
      */
@@ -669,8 +682,10 @@ class BackgroundProcess
      * @param int $total
      * @param int $decimals
      * @return float
+     *
+     * @since 1.1 (previously known as getProgress())
      */
-    protected function getProgress($completed, $total, $decimals)
+    protected function calcProgress($completed, $total, $decimals)
     {
         if ($total > 0) {
             $progress = round($completed / $total * 100, $decimals);
