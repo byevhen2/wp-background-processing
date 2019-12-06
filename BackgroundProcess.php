@@ -150,8 +150,8 @@ class BackgroundProcess
         $batches = BatchesList::create($this->name, $tasks, $this->batchSize);
         $batches->save();
 
-        $this->statIncrease($this->options->batchesCount, $batches->count());
-        $this->statIncrease($this->options->tasksCount, count($tasks));
+        $this->statIncrease('batchesCount', $batches->count());
+        $this->statIncrease('tasksCount', count($tasks));
 
         return $this;
     }
@@ -394,7 +394,7 @@ class BackgroundProcess
                     // Add new task if the previous one returned new workload
                     if (!is_bool($response) && !empty($response)) { // Skip NULLs
                         $tasks->addTask($response);
-                        $this->statIncrease($this->options->tasksCount, 1, false);
+                        $this->statIncrease('tasksCount', 1, false);
                     }
 
                     $this->taskComplete($workload, $response);
@@ -459,7 +459,7 @@ class BackgroundProcess
      */
     protected function taskComplete($workload, $response)
     {
-        $this->statIncrease($this->options->tasksCompleted, 1);
+        $this->statIncrease('tasksCompleted', 1);
     }
 
     /**
@@ -467,7 +467,7 @@ class BackgroundProcess
      * @param \NSCL\WordPress\Async\BatchesList $batches
      */
     protected function batchComplete($batchName, $batches) {
-        $this->statIncrease($this->options->batchesCompleted, 1);
+        $this->statIncrease('batchesCompleted', 1);
     }
 
     protected function afterComplete()
@@ -667,11 +667,7 @@ class BackgroundProcess
      */
     public function tasksProgress($decimals = 0)
     {
-        return $this->calcProgress(
-            $this->getStat($this->options->tasksCompleted),
-            $this->getStat($this->options->tasksCount),
-            $decimals
-        );
+        return $this->calcProgress($this->getStat('tasksCompleted'), $this->getStat('tasksCount'), $decimals);
     }
 
     /**
@@ -680,11 +676,7 @@ class BackgroundProcess
      */
     public function batchesProgress($decimals = 0)
     {
-        return $this->calcProgress(
-            $this->getStat($this->options->batchesCompleted),
-            $this->getStat($this->options->batchesCount),
-            $decimals
-        );
+        return $this->calcProgress($this->getStat('batchesCompleted'), $this->getStat('batchesCount'), $decimals);
     }
 
     /**
@@ -708,7 +700,7 @@ class BackgroundProcess
     }
 
     /**
-     * @param string $option
+     * @param string $parameter Parameter like "batchesCount" or "tasksCompleted".
      * @param int $default Optional. 0 by default.
      * @param bool $allowCache Optional. The cache is allowed when getting the
      *     option value. TRUE by default.
@@ -716,22 +708,24 @@ class BackgroundProcess
      *
      * @since 1.1
      */
-    protected function getStat($option, $default = 0, $allowCache = true)
+    public function getStat($parameter, $default = 0, $allowCache = true)
     {
+        $option = $this->options->$parameter;
         return (int)$this->getOption($option, $default, $allowCache);
     }
 
     /**
-     * @param string $option
+     * @param string $parameter Parameter like "batchesCount" or "tasksCompleted".
      * @param int $increase
      * @param bool $allowCache Optional. The cache is allowed when getting the
      *     option value. TRUE by default.
      *
      * @since 1.1
      */
-    protected function statIncrease($option, $increase, $allowCache = true)
+    protected function statIncrease($parameter, $increase, $allowCache = true)
     {
-        $this->updateOption($option, $this->getStat($option, $allowCache) + $increase);
+        $option = $this->options->$parameter;
+        $this->updateOption($option, $this->getStat($parameter, 0, $allowCache) + $increase);
     }
 
     /**
@@ -742,7 +736,7 @@ class BackgroundProcess
      */
     public function tasksCount($allowCache = true)
     {
-        return $this->getStat($this->options->tasksCount, 0, $allowCache);
+        return $this->getStat('tasksCount', 0, $allowCache);
     }
 
     /**
@@ -750,7 +744,7 @@ class BackgroundProcess
      */
     public function tasksCompleted()
     {
-        return $this->getStat($this->options->tasksCompleted);
+        return $this->getStat('tasksCompleted');
     }
 
     /**
@@ -766,7 +760,7 @@ class BackgroundProcess
      */
     public function batchesCount()
     {
-        return $this->getStat($this->options->batchesCount);
+        return $this->getStat('batchesCount');
     }
 
     /**
@@ -774,7 +768,7 @@ class BackgroundProcess
      */
     public function batchesCompleted()
     {
-        return $this->getStat($this->options->batchesCompleted);
+        return $this->getStat('batchesCompleted');
     }
 
     /**
