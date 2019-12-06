@@ -491,6 +491,9 @@ class BackgroundProcess
 
         if ($startedAt == 0) {
             $this->updateOption($this->options->startedAt, $this->startTime);
+
+            // Notify about the first start
+            $this->triggerEvent('before_first_start', $this, $this->startTime);
         }
     }
 
