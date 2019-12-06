@@ -135,6 +135,9 @@ class BackgroundProcess
 
     protected function addActions()
     {
+        // Notify the environment about the new process
+        add_action('init', [$this, 'registerProcess'], 5);
+
         // Listen for AJAX calls
         add_action('wp_ajax_' . $this->name, [$this, 'maybeHandle']);
         add_action('wp_ajax_nopriv_' . $this->name, [$this, 'maybeHandle']);
@@ -151,6 +154,16 @@ class BackgroundProcess
 
             return $intervals;
         });
+    }
+
+    /**
+     * Callback for action "init".
+     *
+     * @since 1.1
+     */
+    public function registerProcess()
+    {
+        $this->triggerEvent('register', $this);
     }
 
     /**

@@ -95,7 +95,11 @@ Max memory limit in **bytes**.
 The limitation for the memory usage. The range is \[0; 1\] (where 0.9 is 90%).
 
 ### Actions
-* `before_first_start{$processName}` — on the first start of the process.
+* `register_{$processName}` — created another instance of the BackgroundProcess (triggers on action "init" with priority 5).
+    ```php
+        do_action("register_{$processName}", BackgroundProcess);
+    ```
+* `before_first_start_{$processName}` — on the first start of the process.
     ```php
         do_action("before_first_start_{$processName}", BackgroundProcess, int $startTime);
     ```
@@ -115,7 +119,7 @@ The limitation for the memory usage. The range is \[0; 1\] (where 0.9 is 90%).
     ```php
         do_action("after_success_{$processName}", BackgroundProcess);
     ```
-* `after_complete_{$processName}` — each time the process finishes or cancels its work; triggers after _"after_cancel"_ and _"after_success"_.
+* `after_complete_{$processName}` — each time the process finishes or cancels its work; triggers after actions "after_cancel" and "after_success".
     ```php
         do_action("after_complete_{$processName}", BackgroundProcess, bool $succeeded);
     ```
