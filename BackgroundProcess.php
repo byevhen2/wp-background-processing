@@ -40,7 +40,7 @@ class BackgroundProcess
      */
     protected $cronTime = 300;
 
-    /** @var int Start time of current process. */
+    /** @var int The start time of the current execution. */
     protected $startTime = 0;
 
     /**
@@ -79,6 +79,7 @@ class BackgroundProcess
 
         // Each option name still is less than suffix of the lock transient
         $this->options->lock             = $this->name . '_lock';
+        $this->options->startedAt        = $this->name . '_started_at';
         $this->options->abort            = $this->name . '_abort';
         $this->options->batchesCount     = $this->name . '_batches_count';
         $this->options->batchesCompleted = $this->name . '_batches_completed';
@@ -105,29 +106,31 @@ class BackgroundProcess
     }
 
     /**
-     * Get value of read-only field.
-     *
-     * @param string $name Field name.
-     * @return mixed Field value or NULL.
-     */
-    public function __get($name)
-    {
-        if (in_array($name, ['name', 'cronName', 'cronIntervalName', 'cronTime',
-            'startTime', 'availableTime', 'availableMemory'])
-        ) {
-            return $this->$name;
-        } else {
-            return null;
-        }
-    }
-
-    /**
      * @return array
      */
     protected function getPropertyNames()
     {
         return ['prefix', 'action', 'batchSize', 'cronInterval', 'lockTime',
             'maxExecutionTime', 'timeReserve', 'memoryLimit', 'memoryFactor'];
+    }
+
+    /**
+     * Get value of read-only field.
+     *
+     * @param string $name Field name.
+     * @return mixed Field value or NULL.
+     *
+     * @since 1.1 "startTime" was removed. Use method startTime() instead.
+     */
+    public function __get($name)
+    {
+        if (in_array($name, ['name', 'cronName', 'cronIntervalName', 'cronTime',
+            'availableTime', 'availableMemory'])
+        ) {
+            return $this->$name;
+        } else {
+            return null;
+        }
     }
 
     protected function addActions()
@@ -444,7 +447,16 @@ class BackgroundProcess
         }
     }
 
-    protected function beforeStart() {}
+    protected function beforeStart()
+    {
+        // Save the time of the first start
+        $startedAt = (int)$this->getOption($this->options->startedAt, 0);
+
+        if ($startedAt == 0) {
+            $this->updateOption($this->options->startedAt, $this->startTime);
+        }
+    }
+
     protected function beforeStop() {}
 
     /**
@@ -599,6 +611,22 @@ class BackgroundProcess
     {
         $timestamp = wp_next_scheduled($this->cronName);
         return $timestamp !== false;
+    }
+
+    /**
+     * @param bool $allExecutions Optional. Get the time of the first start.
+     *     FALSE by default (get the time of the current execution).
+     * @return int Unix timestamp.
+     *
+     * @since 1.1
+     */
+    public function startTime($allExecutions = false)
+    {
+        if (!$allExecutions) {
+            return $this->startTime;
+        } else {
+            return (int)$this->getOption($this->options->startedAt, 0);
+        }
     }
 
     /**
