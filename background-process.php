@@ -804,33 +804,6 @@ class BackgroundProcess
     }
 
     /**
-     * @param string $option
-     * @param mixed $default Optional. FALSE by default.
-     * @return mixed
-     *
-     * @global \wpdb $wpdb
-     */
-    protected function getUncachedOption($option, $default = false)
-    {
-        global $wpdb;
-
-        // The code partly from function get_option()
-        $suppressStatus = $wpdb->suppress_errors(); // Set to suppress errors and
-                                                    // save the previous value
-
-        $query = "SELECT `option_value` FROM {$wpdb->options} WHERE `option_name` = %s LIMIT 1";
-        $row   = $wpdb->get_row($wpdb->prepare($query, $option));
-
-        $wpdb->suppress_errors($suppressStatus);
-
-        if (is_object($row)) {
-            return maybe_unserialize($row->option_value);
-        } else {
-            return $default;
-        }
-    }
-
-    /**
      * @return self
      */
     public function basicAuth($username, $password)
