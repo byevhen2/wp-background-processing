@@ -40,13 +40,6 @@ class BackgroundProcess
      */
     protected $cronTime = 300;
 
-    protected $optionLock             = 'wpbg_process_lock';
-    protected $optionAbort            = 'wpbg_process_abort';
-    protected $optionBatchesCount     = 'wpbg_process_batches_count';
-    protected $optionBatchesCompleted = 'wpbg_process_batches_completed';
-    protected $optionTasksCount       = 'wpbg_process_tasks_count';
-    protected $optionTasksCompleted   = 'wpbg_process_tasks_completed';
-
     /** @var int Start time of current process. */
     protected $startTime = 0;
 
@@ -63,6 +56,13 @@ class BackgroundProcess
     protected $isAborting = false;
 
     /**
+     * @var \stdClass
+     *
+     * @since 1.1
+     */
+    protected $options = null;
+
+    /**
      * @param array $properties Optional.
      */
     public function __construct($properties = [])
@@ -71,18 +71,19 @@ class BackgroundProcess
             $this->setProperties($properties);
         }
 
-        $this->name = $this->prefix . '_' . $this->action;       // "wpdb_process"
+        $this->name     = $this->prefix . '_' . $this->action;   // "wpdb_process"
         $this->cronName = $this->name . '_cron';                 // "wpbg_process_cron"
         $this->cronIntervalName = $this->cronName . '_interval'; // "wpbg_process_cron_interval"
         $this->cronTime = \MINUTE_IN_SECONDS * $this->cronInterval;
+        $this->options  = new \stdClass();
 
-        // Each option still is less than suffix of the lock transient
-        $this->optionLock             = $this->name . '_lock';
-        $this->optionAbort            = $this->name . '_abort';
-        $this->optionBatchesCount     = $this->name . '_batches_count';
-        $this->optionBatchesCompleted = $this->name . '_batches_completed';
-        $this->optionTasksCount       = $this->name . '_tasks_count';
-        $this->optionTasksCompleted   = $this->name . '_tasks_completed';
+        // Each option name still is less than suffix of the lock transient
+        $this->options->lock             = $this->name . '_lock';
+        $this->options->abort            = $this->name . '_abort';
+        $this->options->batchesCount     = $this->name . '_batches_count';
+        $this->options->batchesCompleted = $this->name . '_batches_completed';
+        $this->options->tasksCount       = $this->name . '_tasks_count';
+        $this->options->tasksCompleted   = $this->name . '_tasks_completed';
 
         $this->addActions();
     }
@@ -100,6 +101,23 @@ class BackgroundProcess
         // Set up properties
         foreach ($properties as $property => $value) {
             $this->$property = $value;
+        }
+    }
+
+    /**
+     * Get value of read-only field.
+     *
+     * @param string $name Field name.
+     * @return mixed Field value or NULL.
+     */
+    public function __get($name)
+    {
+        if (in_array($name, ['name', 'cronName', 'cronIntervalName', 'cronTime',
+            'startTime', 'availableTime', 'availableMemory'])
+        ) {
+            return $this->$name;
+        } else {
+            return null;
         }
     }
 
@@ -132,8 +150,8 @@ class BackgroundProcess
         $batches = BatchesList::create($this->name, $tasks, $this->batchSize);
         $batches->save();
 
-        $this->increaseBatchesCount($batches->count());
-        $this->increaseTasksCount(count($tasks));
+        $this->statIncrease($this->options->batchesCount, $batches->count());
+        $this->statIncrease($this->options->tasksCount, count($tasks));
 
         return $this;
     }
@@ -195,11 +213,11 @@ class BackgroundProcess
     public function cancel()
     {
         if ($this->isRunning()) {
-            $this->updateOption($this->optionAbort, true);
+            $this->updateOption($this->options->abort, true);
         } else {
             $this->unscheduleCron();
             BatchesList::removeAll($this->name);
-            $this->clearOptions();
+            $this->deleteOptions();
         }
     }
 
@@ -284,7 +302,7 @@ class BackgroundProcess
             $this->startTime = time();
         }
 
-        return set_transient($this->optionLock, microtime(), $this->lockTime);
+        return set_transient($this->options->lock, microtime(), $this->lockTime);
     }
 
     /**
@@ -293,7 +311,7 @@ class BackgroundProcess
     protected function unlock()
     {
         $this->startTime = 0;
-        delete_transient($this->optionLock);
+        delete_transient($this->options->lock);
     }
 
     /**
@@ -376,7 +394,7 @@ class BackgroundProcess
                     // Add new task if the previous one returned new workload
                     if (!is_bool($response) && !empty($response)) { // Skip NULLs
                         $tasks->addTask($response);
-                        $this->increaseTasksCount(1, false);
+                        $this->statIncrease($this->options->tasksCount, 1, false);
                     }
 
                     $this->taskComplete($workload, $response);
@@ -441,7 +459,7 @@ class BackgroundProcess
      */
     protected function taskComplete($workload, $response)
     {
-        $this->increaseTasksCompleted(1);
+        $this->statIncrease($this->options->tasksCompleted, 1);
     }
 
     /**
@@ -449,7 +467,7 @@ class BackgroundProcess
      * @param \NSCL\WordPress\Async\BatchesList $batches
      */
     protected function batchComplete($batchName, $batches) {
-        $this->increaseBatchesCompleted(1);
+        $this->statIncrease($this->options->batchesCompleted, 1);
     }
 
     protected function afterComplete()
@@ -463,7 +481,7 @@ class BackgroundProcess
         do_action($this->name . '_completed');
 
         $this->unscheduleCron();
-        $this->clearOptions();
+        $this->deleteOptions();
     }
 
     protected function afterSuccess()
@@ -476,13 +494,15 @@ class BackgroundProcess
         do_action($this->name . '_cancelled');
     }
 
-    protected function clearOptions()
+    /**
+     * @since 1.1 (previously known as clearOptions())
+     */
+    protected function deleteOptions()
     {
-        delete_option($this->optionAbort);
-        delete_option($this->optionBatchesCount);
-        delete_option($this->optionBatchesCompleted);
-        delete_option($this->optionTasksCount);
-        delete_option($this->optionTasksCompleted);
+        // Delete every registered option, even the custom ones
+        foreach ($this->options as $option => $_) {
+            delete_option($option);
+        }
     }
 
     /**
@@ -527,7 +547,7 @@ class BackgroundProcess
             return true;
         }
 
-        $this->isAborting = (bool)$this->getUncachedOption($this->optionAbort, false);
+        $this->isAborting = (bool)$this->getOption($this->options->abort, false, false);
 
         return $this->isAborting;
     }
@@ -545,7 +565,7 @@ class BackgroundProcess
      */
     public function isRunning()
     {
-        return get_transient($this->optionLock) !== false;
+        return get_transient($this->options->lock) !== false;
     }
 
     /**
@@ -624,7 +644,11 @@ class BackgroundProcess
      */
     public function tasksProgress($decimals = 0)
     {
-        return $this->getProgress($this->tasksCompleted(), $this->tasksCount(), $decimals);
+        return $this->calcProgress(
+            $this->getStat($this->options->tasksCompleted),
+            $this->getStat($this->options->tasksCount),
+            $decimals
+        );
     }
 
     /**
@@ -633,7 +657,11 @@ class BackgroundProcess
      */
     public function batchesProgress($decimals = 0)
     {
-        return $this->getProgress($this->batchesCompleted(), $this->batchesCount(), $decimals);
+        return $this->calcProgress(
+            $this->getStat($this->options->batchesCompleted),
+            $this->getStat($this->options->batchesCount),
+            $decimals
+        );
     }
 
     /**
@@ -655,45 +683,41 @@ class BackgroundProcess
     }
 
     /**
-     * @param int $increment
-     * @param bool $useCache Optional. TRUE by default.
-     */
-    protected function increaseTasksCount($increment, $useCache = true)
-    {
-        $this->updateOption($this->optionTasksCount, $this->tasksCount($useCache) + $increment);
-    }
-
-    /**
-     * @param int $increment
-     */
-    protected function increaseTasksCompleted($increment)
-    {
-        $this->updateOption($this->optionTasksCompleted, $this->tasksCompleted() + $increment);
-    }
-
-    /**
-     * @param int $increment
-     */
-    protected function increaseBatchesCount($increment)
-    {
-        $this->updateOption($this->optionBatchesCount, $this->batchesCount() + $increment);
-    }
-
-    /**
-     * @param int $increment
-     */
-    protected function increaseBatchesCompleted($increment)
-    {
-        $this->updateOption($this->optionBatchesCompleted, $this->batchesCompleted() + $increment);
-    }
-
-    /**
-     * @param bool $useCache Optional. TRUE by default.
+     * @param string $option
+     * @param int $default Optional. 0 by default.
+     * @param bool $allowCache Optional. The cache is allowed when getting the
+     *     option value. TRUE by default.
      * @return int
+     *
+     * @since 1.1
      */
-    public function tasksCount($useCache = true)
+    protected function getStat($option, $default = 0, $allowCache = true)
     {
-        return (int)$this->getOption($this->optionTasksCount, 0, $useCache);
+        return (int)$this->getOption($option, $default, $allowCache);
+    }
+
+    /**
+     * @param string $option
+     * @param int $increase
+     * @param bool $allowCache Optional. The cache is allowed when getting the
+     *     option value. TRUE by default.
+     *
+     * @since 1.1
+     */
+    protected function statIncrease($option, $increase, $allowCache = true)
+    {
+        $this->updateOption($option, $this->getStat($option, $allowCache) + $increase);
+    }
+
+    /**
+     * @param bool $allowCache Optional. TRUE by default.
+     * @return int
+     *
+     * @since 1.1 the argument $useCache was renamed to $allowCache.
+     */
+    public function tasksCount($allowCache = true)
+    {
+        return $this->getStat($this->options->tasksCount, 0, $allowCache);
     }
 
     /**
@@ -701,7 +725,7 @@ class BackgroundProcess
      */
     public function tasksCompleted()
     {
-        return (int)$this->getOption($this->optionTasksCompleted, 0);
+        return $this->getStat($this->options->tasksCompleted);
     }
 
     /**
@@ -717,7 +741,7 @@ class BackgroundProcess
      */
     public function batchesCount()
     {
-        return (int)$this->getOption($this->optionBatchesCount, 0);
+        return $this->getStat($this->options->batchesCount);
     }
 
     /**
@@ -725,7 +749,7 @@ class BackgroundProcess
      */
     public function batchesCompleted()
     {
-        return (int)$this->getOption($this->optionBatchesCompleted, 0);
+        return $this->getStat($this->options->batchesCompleted);
     }
 
     /**
@@ -748,15 +772,34 @@ class BackgroundProcess
     /**
      * @param string $option
      * @param mixed $default Optional. FALSE by default.
-     * @param bool $useCache Optional. TRUE by default.
+     * @param bool $allowCache Optional. TRUE by default.
      * @return mixed
+     *
+     * @global \wpdb $wpdb
+     *
+     * @since 1.1 the argument $useCache was renamed to $allowCache.
      */
-    protected function getOption($option, $default = false, $useCache = true)
+    protected function getOption($option, $default = false, $allowCache = true)
     {
-        if ($useCache) {
+        global $wpdb;
+
+        if ($allowCache) {
             return get_option($option, $default);
         } else {
-            return $this->getUncachedOption($option, $default);
+            // The code partly from function get_option()
+            $suppressStatus = $wpdb->suppress_errors(); // Set to suppress errors and
+                                                        // save the previous state
+
+            $query = "SELECT `option_value` FROM {$wpdb->options} WHERE `option_name` = %s LIMIT 1";
+            $row   = $wpdb->get_row($wpdb->prepare($query, $option));
+
+            $wpdb->suppress_errors($suppressStatus);
+
+            if (is_object($row)) {
+                return maybe_unserialize($row->option_value);
+            } else {
+                return $default;
+            }
         }
     }
 
@@ -800,15 +843,6 @@ class BackgroundProcess
         return $this;
     }
 
-    protected function fireDie()
-    {
-        if ($this->isDoingAjax()) {
-            wp_die();
-        } else {
-            exit(0); // Don't call wp_die() on cron
-        }
-    }
-
     /**
      * @return bool
      */
@@ -833,20 +867,12 @@ class BackgroundProcess
         }
     }
 
-    /**
-     * Get value of read-only field.
-     *
-     * @param string $name Field name.
-     * @return mixed Field value or NULL.
-     */
-    public function __get($name)
+    protected function fireDie()
     {
-        if (in_array($name, ['name', 'cronName', 'cronIntervalName', 'cronTime',
-            'startTime', 'availableTime', 'availableMemory'])
-        ) {
-            return $this->$name;
+        if ($this->isDoingAjax()) {
+            wp_die();
         } else {
-            return null;
+            exit(0); // Don't call wp_die() on cron
         }
     }
 }
