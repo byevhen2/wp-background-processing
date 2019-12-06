@@ -443,7 +443,7 @@ class BackgroundProcess
         if (!$this->isEmptyQueue()) {
             $this->run();
         } else {
-            $this->triggerEvent('after_complete', $this); // afterComplete()
+            $this->triggerEvent('after_complete', $this, !$this->isAborting); // afterComplete()
         }
     }
 
