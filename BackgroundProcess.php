@@ -138,7 +138,16 @@ class BackgroundProcess
 
         // Listen for cron events
         add_action($this->cronName, [$this, 'maybeHandle']);
-        add_filter('cron_schedules', [$this, 'registerCronInterval']);
+
+        // Add cron interval
+        add_filter('cron_schedules', function ($intervals) {
+            $intervals[$this->cronIntervalName] = [
+                'interval' => $this->cronTime,
+                'display'  => sprintf(__('Every %d Minutes'), $this->cronInterval)
+            ];
+
+            return $intervals;
+        });
     }
 
     /**
@@ -593,62 +602,6 @@ class BackgroundProcess
     }
 
     /**
-     * @param int $waitTime Optional. Pause before executing the cron event. 0
-     *     <b>seconds</b> by default (run immediately).
-     * @param bool $force Optional. Reschedule cron even if it was already
-     *     scheduled. FALSE by default.
-     * @return bool|null Before WordPress 5.1 function wp_schedule_event()
-     *     sometimes returned NULL.
-     *
-     * @since 1.1 added new argument - $force.
-     */
-    public function scheduleCron($waitTime = 0, $force = false)
-    {
-        $scheduled = $this->isCronScheduled();
-
-        if (!$scheduled || $force) {
-            if ($scheduled) {
-                $this->unscheduleCron();
-            }
-
-            return wp_schedule_event(time() + $waitTime, $this->cronIntervalName, $this->cronName);
-        } else {
-            return true;
-        }
-    }
-
-    /**
-     * @return bool|null Before WordPress 5.1 function wp_unschedule_event()
-     *     sometimes returned NULL.
-     */
-    public function unscheduleCron()
-    {
-        $timestamp = wp_next_scheduled($this->cronName);
-
-        if ($timestamp !== false) {
-            return wp_unschedule_event($timestamp, $this->cronName);
-        } else {
-            return true;
-        }
-    }
-
-    /**
-     * Callback for filter "cron_schedules".
-     *
-     * @param array $intervals
-     * @return array
-     */
-    public function registerCronInterval($intervals)
-    {
-        $intervals[$this->cronIntervalName] = [
-            'interval' => $this->cronTime,
-            'display'  => sprintf(__('Every %d Minutes'), $this->cronInterval)
-        ];
-
-        return $intervals;
-    }
-
-    /**
      * An alias of tasksProgress().
      *
      * @param int $decimals Optional. 0 digits by default.
@@ -880,6 +833,46 @@ class BackgroundProcess
         });
 
         return $this;
+    }
+
+    /**
+     * @param int $waitTime Optional. Pause before executing the cron event. 0
+     *     <b>seconds</b> by default (run immediately).
+     * @param bool $force Optional. Reschedule cron even if it was already
+     *     scheduled. FALSE by default.
+     * @return bool|null Before WordPress 5.1 function wp_schedule_event()
+     *     sometimes returned NULL.
+     *
+     * @since 1.1 added new argument - $force.
+     */
+    public function scheduleCron($waitTime = 0, $force = false)
+    {
+        $scheduled = $this->isCronScheduled();
+
+        if (!$scheduled || $force) {
+            if ($scheduled) {
+                $this->unscheduleCron();
+            }
+
+            return wp_schedule_event(time() + $waitTime, $this->cronIntervalName, $this->cronName);
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * @return bool|null Before WordPress 5.1 function wp_unschedule_event()
+     *     sometimes returned NULL.
+     */
+    public function unscheduleCron()
+    {
+        $timestamp = wp_next_scheduled($this->cronName);
+
+        if ($timestamp !== false) {
+            return wp_unschedule_event($timestamp, $this->cronName);
+        } else {
+            return true;
+        }
     }
 
     /**
