@@ -595,12 +595,22 @@ class BackgroundProcess
     /**
      * @param int $waitTime Optional. Pause before executing the cron event. 0
      *     <b>seconds</b> by default (run immediately).
+     * @param bool $force Optional. Reschedule cron even if it was already
+     *     scheduled. FALSE by default.
      * @return bool|null Before WordPress 5.1 function wp_schedule_event()
      *     sometimes returned NULL.
+     *
+     * @since 1.1 added new argument - $force.
      */
-    public function scheduleCron($waitTime = 0)
+    public function scheduleCron($waitTime = 0, $force = false)
     {
-        if (!$this->isCronScheduled()) {
+        $scheduled = $this->isCronScheduled();
+
+        if (!$scheduled || $force) {
+            if ($scheduled) {
+                $this->unscheduleCron();
+            }
+
             return wp_schedule_event(time() + $waitTime, $this->cronIntervalName, $this->cronName);
         } else {
             return true;
