@@ -829,6 +829,53 @@ class BackgroundProcess
     }
 
     /**
+     * @param string $action
+     * @param mixed $_ Additional action arguments.
+     *
+     * @since 1.1
+     */
+    protected function triggerEvent($action, $_ = null)
+    {
+        $event = $args = func_get_args();
+
+        array_shift($args); // Remove the action string from arguments
+        $event[0] .= '_' . $this->name; // ["{action}_{process}", ...$args]
+
+        // Get the name of the callback. For example: "afterComplete" for action
+        // "after_complete"
+        $parts = explode('_', $action);
+        $parts = array_map('ucfirst', $parts);
+
+        $callback = lcfirst(implode('', $parts));
+
+        // Trigger own handler
+        if (method_exists($this, $callback)) {
+            // Some methods are protected, so you can't just call:
+            //     call_user_func_array([$this, $callback], $args) <- Fail
+            // But it also not very cool to put an array in every handler
+            switch (count($args)) {
+                case 1: $this->$callback($args[0]); break;
+                case 2: $this->$callback($args[0], $args[1]); break;
+                case 3: $this->$callback($args[0], $args[1], $args[2]); break;
+                default: $this->$callback($args); break;
+            }
+        } else {
+            $this->onEvent($action, $args);
+        }
+
+        // Trigger WordPress action
+        call_user_func_array('do_action', $event);
+    }
+
+    /**
+     * @param string $action
+     * @param array $args
+     *
+     * @since 1.1
+     */
+    protected function onEvent($action, $args) {}
+
+    /**
      * @return self
      */
     public function basicAuth($username, $password)
