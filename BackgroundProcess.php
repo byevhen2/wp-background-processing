@@ -6,8 +6,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once __DIR__ . '/includes/TasksList.php';
-require_once __DIR__ . '/includes/BatchesList.php';
+require_once __DIR__ . '/includes/TasksBatches.php';
 
 /**
  * @since 1.0
@@ -56,6 +55,13 @@ class BackgroundProcess
     protected $isAborting = false;
 
     /**
+     * @var bool
+     *
+     * @since 1.1
+     */
+    protected $shouldStop = false;
+
+    /**
      * @var \stdClass
      *
      * @since 1.1
@@ -71,13 +77,14 @@ class BackgroundProcess
             $this->setProperties($properties);
         }
 
-        $this->name     = $this->prefix . '_' . $this->action;   // "wpdb_process"
-        $this->cronName = $this->name . '_cron';                 // "wpbg_process_cron"
-        $this->cronIntervalName = $this->cronName . '_interval'; // "wpbg_process_cron_interval"
-        $this->cronTime = \MINUTE_IN_SECONDS * $this->cronInterval;
-        $this->options  = new \stdClass();
+        $this->name             = $this->prefix . '_' . $this->action; // "wpdb_process"
+        $this->cronName         = $this->name . '_cron';               // "wpbg_process_cron"
+        $this->cronIntervalName = $this->cronName . '_interval';       // "wpbg_process_cron_interval"
 
-        // Each option name still is less than suffix of the lock transient
+        $this->cronTime = \MINUTE_IN_SECONDS * $this->cronInterval;
+
+        // Register options
+        $this->options                   = new \stdClass();
         $this->options->lock             = $this->name . '_lock';
         $this->options->startedAt        = $this->name . '_started_at';
         $this->options->abort            = $this->name . '_abort';
@@ -172,8 +179,8 @@ class BackgroundProcess
      */
     public function addTasks($tasks)
     {
-        $batches = BatchesList::create($this->name, $tasks, $this->batchSize);
-        $batches->save();
+        $batches = TasksBatches::create($this->name, $tasks, $this->batchSize);
+        $batches->saveAll();
 
         $this->statIncrease('batchesCount', $batches->count());
         $this->statIncrease('tasksCount', count($tasks));
@@ -241,7 +248,7 @@ class BackgroundProcess
             $this->updateOption($this->options->abort, true);
         } else {
             $this->unscheduleCron();
-            BatchesList::removeAll($this->name);
+            TasksBatches::removeAll($this->name);
             $this->deleteOptions();
         }
     }
@@ -403,61 +410,74 @@ class BackgroundProcess
         $this->triggerEvent('before_start', $this); // beforeStart()
 
         do {
-            $batches = BatchesList::create($this->name);
-
-            foreach ($batches as $batchName => $tasks) {
-                foreach ($tasks as $index => $workload) {
-                    // Continue locking the process
-                    $this->lock();
-
-                    $response = $this->task($workload);
-
-                    // Remove task from the batch whether it ended up
-                    // successfully or not
-                    $tasks->removeTask($index);
-
-                    // Add new task if the previous one returned new workload
-                    if (!is_bool($response) && !empty($response)) { // Skip NULLs
-                        $tasks->addTask($response);
-                        $this->statIncrease('tasksCount', 1, false);
-                    }
-
-                    $this->taskComplete($workload, $response);
-
-                    // No time or memory left? We need to restart the process
-                    if ($this->shouldStop()) {
-                        if ($tasks->isFinished()) {
-                            $batches->removeBatch($batchName);
-                        } else if (!$this->isAborting) {
-                            $tasks->save();
-                        }
-
-                        // Stop doing tasks
-                        break 3;
-                    }
-                } // For each task
-
-                $batches->removeBatch($batchName);
-
-                $this->batchComplete($batchName, $batches);
-            } // For each batch
+            $this->handleQueue();
         } while (!$this->shouldStop() && !$this->isEmptyQueue());
 
-        if ($this->isAborting) {
-            BatchesList::removeAll($this->name);
+        if ($this->isAborting()) {
+            TasksBatches::removeAll($this->name);
         }
 
         $this->triggerEvent('before_stop', $this); // beforeStop()
-
-        // Unlock the process to restart it
         $this->unlock();
 
-        // Start next batch if not completed yet or complete the process
+        // Start new session if not completed yet or complete the process
         if (!$this->isEmptyQueue()) {
             $this->run();
         } else {
-            $this->triggerEvent('after_complete', $this, !$this->isAborting); // afterComplete()
+            $this->triggerEvent('after_complete', $this, !$this->isAborting()); // afterComplete()
         }
+    }
+
+    /**
+     * @since 1.1
+     */
+    protected function handleQueue()
+    {
+        $batches = TasksBatches::create($this->name);
+
+        foreach ($batches as $batchName => $tasks) {
+            foreach ($tasks as &$workload) {
+                // Continue locking the process
+                $this->lock();
+
+                $response = $this->task($workload);
+
+                // Remove the task from the list whether it ended up
+                // successfully or not
+                array_shift($tasks);
+
+                // Add new task if the previous one returned new workload
+                if (!is_bool($response) && !empty($response)) { // Skip NULLs
+                    $tasks[] = $response;
+
+                    // Don't use the cache here in the case someone added new
+                    // tasks
+                    $this->statIncrease('tasksCount', 1, false);
+                }
+
+                $this->taskComplete($workload, $response);
+
+                // No time or memory left? We need to restart the process
+                if ($this->shouldStop()) {
+                    break;
+                }
+            } // For each task
+
+            unset($workload);
+
+            if (empty($tasks)) {
+                // All tasks in the batch are finished
+                $batches->removeBatch($batchName);
+                $this->batchComplete($batchName, $batches);
+            } else if (!$this->isAborting()) {
+                // Restarting
+                $batches->saveCurrent($tasks);
+            }
+
+            if ($this->shouldStop()) {
+                break;
+            }
+        } // For each batch
     }
 
     /**
@@ -486,9 +506,10 @@ class BackgroundProcess
 
     /**
      * @param string $batchName
-     * @param \NSCL\WordPress\Async\BatchesList $batches
+     * @param \NSCL\WordPress\Async\TasksBatches $batches
      */
-    protected function batchComplete($batchName, $batches) {
+    protected function batchComplete($batchName, $batches)
+    {
         $this->statIncrease('batchesCompleted', 1);
     }
 
@@ -519,7 +540,7 @@ class BackgroundProcess
     {
         // This will trigger do_action("after_cancel") or do_action("after_success")
         // before do_action("after_complete")
-        if ($this->isAborting) {
+        if ($this->isAborting()) {
             $this->triggerEvent('after_cancel', $this); // afterCancel()
         } else {
             $this->triggerEvent('after_success', $this); // afterSuccess()
@@ -547,9 +568,14 @@ class BackgroundProcess
      */
     protected function shouldStop()
     {
-        return $this->timeExceeded()
-            || $this->memoryExceeded()
-            || $this->isAborting();
+        if ($this->shouldStop) {
+            // No need to repeat any check anymore
+            return true;
+        }
+
+        $this->shouldStop = $this->timeExceeded() || $this->memoryExceeded() || $this->isAborting();
+
+        return $this->shouldStop;
     }
 
     /**
@@ -615,7 +641,7 @@ class BackgroundProcess
         //        values of the options "batches_count" and "batches_complete"
         //        (initial state or after the process completes).
 
-        return !BatchesList::hasMore($this->name);
+        return !TasksBatches::hasMore($this->name);
     }
 
     /**
