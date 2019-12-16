@@ -27,18 +27,23 @@ class BackgroundProcess
     public function touchWhenReady([$force]) { ... }
     public function cancel() { ... }
 
-    public function maybeHandle() { ... }
     public function task($workload) { ... }
 
     public function isAborting() { ... }
     public function isInProgress() { ... }
     public function isRunning() { ... }
     public function isEmptyQueue() { ... }
+    public function isCronScheduled() { ... }
 
+    public function startTime([$allExecutions]) { ... }
+
+    public function getProgress([$decimals]) { ... }
     public function tasksProgress([$decimals]) { ... }
     public function batchesProgress([$decimals]) { ... }
 
-    public function tasksCount([$useCache]) { ... }
+    public function getStat($parameter[, $default, $allowCache]) { ... }
+
+    public function tasksCount([$allowCache]) { ... }
     public function tasksCompleted() { ... }
     public function tasksLeft() { ... }
 
@@ -46,11 +51,10 @@ class BackgroundProcess
     public function batchesCompleted() { ... }
     public function batchesLeft() { ... }
 
-    public function isCronScheduled() { ... }
-    public function scheduleCron([$waitTime]) { ... }
-    public function unscheduleCron() { ... }
-
     public function basicAuth($username, $password) { ... }
+
+    public function scheduleCron([$waitTime, $force]) { ... }
+    public function unscheduleCron() { ... }
 }
 ```
 
