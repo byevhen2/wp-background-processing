@@ -196,8 +196,10 @@ class BackgroundProcess
     public function run()
     {
         // Dispatch AJAX event
-        $requestUrl = add_query_arg($this->requestQueryArgs(), $this->requestUrl());
-        $response = wp_remote_post(esc_url_raw($requestUrl), $this->requestPostArgs());
+        $requestUrl  = $this->requestUrl();
+        $requestArgs = $this->requestArgs();
+
+        $response = wp_remote_post(esc_url_raw($requestUrl), $requestArgs);
 
         return is_wp_error($response) ? $response : true;
     }
@@ -258,24 +260,19 @@ class BackgroundProcess
      */
     protected function requestUrl()
     {
-        return admin_url('admin-ajax.php');
-    }
-
-    /**
-     * @return array
-     */
-    protected function requestQueryArgs()
-    {
-        return [
-            'action'     => $this->name,
-            'wpbg_nonce' => wp_create_nonce($this->name)
-        ];
+        return add_query_arg(
+            [
+                'action'     => $this->name,
+                'wpbg_nonce' => wp_create_nonce($this->name)
+            ],
+            admin_url('admin-ajax.php')
+        );
     }
 
     /**
      * @return array The arguments for wp_remote_post().
      */
-    protected function requestPostArgs()
+    protected function requestArgs()
     {
         return [
             'timeout'   => 0.01,
