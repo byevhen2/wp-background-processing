@@ -143,7 +143,7 @@ class BackgroundProcess
     protected function addActions()
     {
         // Notify the environment about the new process
-        add_action('init', [$this, 'registerProcess'], 5);
+        add_action('init', [$this, 'registerProcess']);
 
         // Listen for AJAX calls
         add_action('wp_ajax_' . $this->name, [$this, 'maybeHandle']);
